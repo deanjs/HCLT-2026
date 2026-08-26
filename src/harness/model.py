@@ -101,7 +101,7 @@ class ModelHandle:
         *,
         groups: dict[str, list[str]],
         instruction_text: Optional[str] = None,
-        notation_spans: Optional[dict[str, str]] = None,
+        notation_spans: Optional[dict[str, Any]] = None,
         forced_prefix: str = "def ",
     ) -> dict[str, Any]:
         """이름을 생성하는 디코딩 시점의 query 한 행을 구간별로 관측한다(stepB).
@@ -158,16 +158,48 @@ class ModelHandle:
         if instruction_text:
             char_spans["instruction"] = find_char_spans(prompt_text, [instruction_text])
         # 지침 안의 '표기 지시어 토큰'(camelCase/snake_case)을 통째 지침과 별도로 잡는다.
-        # 이 단어는 지침 문장에만 등장하므로 코드/과제와 혼입되지 않는다(고유).
+        # 값 두 종류를 허용한다:
+        #   · str            : 프롬프트 전체에서 그 단어의 모든 등장을 찾는다(초판, 규칙문+후보열거 합침).
+        #   · [(a,b), ...]   : **지침 문장 내부 offset**. 지침이 프롬프트에 박힌 시작점을 더해 재기준
+        #                      (규칙문/후보열거 분리 — instruction_notation_spans). 지침을 못 찾으면 빈 구간.
         if notation_spans:
-            for span_name, needle in notation_spans.items():
-                char_spans[span_name] = find_char_spans(prompt_text, [needle])
+            inst_char = char_spans.get("instruction") or (
+                find_char_spans(prompt_text, [instruction_text]) if instruction_text else []
+            )
+            inst_start = inst_char[0][0] if inst_char else None
+            for span_name, spec in notation_spans.items():
+                if isinstance(spec, str):
+                    char_spans[span_name] = find_char_spans(prompt_text, [spec])
+                elif inst_start is None:
+                    char_spans[span_name] = []
+                else:
+                    char_spans[span_name] = [(inst_start + a, inst_start + b) for a, b in spec]
         spans = locate_token_spans(offsets, char_spans)
+
+        # 조용한 실패 금지: 구간을 못 찾으면 지표가 None으로 저장되고, 집계에서 `.get(키, 0)`을
+        # 쓰면 "0을 봤다"로 오독된다. chat 템플릿이 지침 문장을 변형하는 모델에서 실제로 생긴다.
+        empty = [name for name, idxs in spans.items() if not idxs]
+        if empty:
+            raise ValueError(
+                f"프롬프트에서 찾지 못한 관측 구간: {empty}. "
+                "chat 템플릿이 문장을 변형했거나 이름/지시어 문자열이 어긋났다. "
+                "빈 구간을 그대로 저장하면 '주목하지 않았다'로 오독되므로 실행을 중단한다."
+            )
 
         # 3) forward — 어텐션·KV value 확보
         with torch.no_grad():
             out = self.model(**enc, output_attentions=True, use_cache=True)
         attentions = out.attentions            # tuple[L] each [1, Hq, seq, seq]
+        # 조용한 실패 금지: sdpa/flash 어텐션은 output_attentions=True를 **경고만 찍고 무시**해
+        # attentions를 빈 튜플/None으로 준다. 그러면 per_layer가 빈 채로 저장돼
+        # "관측했는데 값이 없다"와 "관측이 아예 안 됐다"가 구분되지 않는다.
+        if not attentions or attentions[0] is None:
+            impl = getattr(self.model.config, "_attn_implementation", "?")
+            raise RuntimeError(
+                f"어텐션 가중치가 돌아오지 않았다 (attn_implementation={impl!r}). "
+                "관측에는 eager가 필요하다 — load_model(spec, attn_implementation='eager')로 "
+                "다시 불러온다. sdpa/flash는 output_attentions=True를 경고만 찍고 무시한다."
+            )
         values = _value_cache(out.past_key_values)  # list[L] each [1, Hkv, seq, d]
 
         # 4) 층별 집계 — 마지막 query 행과 ‖v‖만 리스트로 옮겨 순수 함수 호출.
@@ -230,7 +262,7 @@ class ModelHandle:
 
         span_kind: 치환 대상 토큰을 찾는 방식.
           "def_name" = 코드 함수 이름(`def <nm>(`의 이름 부분, stepC/step1).
-          "literal"  = 문자열 nm 그대로의 첫 등장(step4 지침 지시어 "camelCase").
+          "literal"  = 문자열 nm 그대로의 첫 등장(step5 지침 지시어 "camelCase").
 
         반환 dict:
           viol_cache/comp_cache/donor_cache, viol_last, pairs, skipped,
@@ -287,6 +319,16 @@ class ModelHandle:
             groups = None
             n_sub = len(pairs)
 
+        if n_sub == 0:
+            # 조용한 실패 금지: 한 자리도 안 덮으면 S_int == S_base가 되어
+            # "개입했는데 효과가 없다"와 수치가 완전히 같아진다(회복률 0.0). 구분되어야 한다.
+            raise ValueError(
+                "치환할 토큰 자리를 하나도 찾지 못했다 — 개입이 실제로 일어나지 않는다. "
+                f"(정렬 단위={token_unit!r}, 구간 종류={span_kind!r}, "
+                f"이름 {len(viol_names)}개 중 {len(skipped)}개 정렬 실패). "
+                "이름·지시어를 프롬프트에서 못 찾았거나, token_unit='all'에서 토큰 수가 어긋난 경우다."
+            )
+
         def logp_candidate(cache, last_tok, cand):
             # [마지막 프롬프트 토큰 + cand[:-1]]을 캐시로 forward → 후보 토큰 logP 합.
             # 캐시를 복제해 forward가 원본을 늘리지 않게 한다(층 스윕에서 재사용).
@@ -326,6 +368,14 @@ class ModelHandle:
         token_unit="mean"이면 pairs 대신 groups로 mean-pool 치환한다: 공여 위치들의 KV를
         평균 내(한 벡터) 위반 이름의 모든 위치에 브로드캐스트(개수 불일치 허용, 스킵 없음).
         """
+        if kind not in ("key", "value", "key_value"):
+            # 조용한 실패 금지: 미지원 kind(예: attn_amplify)는 아무것도 안 바꾸고
+            # recovery=0.0을 돌려주어 "개입해도 안 돌아온다"처럼 보인다. 반드시 터뜨린다.
+            raise NotImplementedError(
+                f"치환으로 구현되지 않은 개입 종류: {kind!r}. "
+                "KV 캐시 편집으로 표현할 수 있는 것은 key/value/key_value뿐이다. "
+                "어텐션 증폭(attn_amplify)은 forward 훅이 필요하며 아직 구현되지 않았다."
+            )
         ek, ev = _cache_kv(work_cache, layer)
         dk, dv = _cache_kv(ctx["donor_cache"], layer)
         edit_k = kind in ("key", "key_value")
@@ -389,7 +439,7 @@ class ModelHandle:
         회복률 = (S_int − S_base)/(S_clean − S_base).
         kind: 'key' / 'value' / 'key_value'. 텍스트는 그대로 두고 **내부 표현만** 바꾼다.
         token_unit: 'all'(전체 토큰) / 'last'(마지막 토큰만) — 이름 토큰 정렬 단위.
-        span_kind: 'def_name'(코드 이름) / 'literal'(지침 지시어, step4).
+        span_kind: 'def_name'(코드 이름) / 'literal'(지침 지시어, step5).
         """
         ctx = self._preference_context(
             viol_messages, comp_messages,
@@ -435,7 +485,7 @@ class ModelHandle:
         layers=None이면 전 층(0..num_layers-1). 산출은 층별 회복률 곡선 3개(kind별)와
         피크 층·K/V 경로별 기여도의 원자료가 된다(계획서 §5 Step 1).
         token_unit: 'all'(전체 토큰) / 'last'(마지막 토큰만) — 이름 토큰 정렬 단위.
-        span_kind: 'def_name'(코드 이름, step1) / 'literal'(지침 지시어, step4).
+        span_kind: 'def_name'(코드 이름, step1) / 'literal'(지침 지시어, step5).
         """
         if layers is None:
             layers = list(range(self.num_layers))
@@ -466,6 +516,108 @@ class ModelHandle:
             "kinds": list(kinds),
             "n_substituted_tokens": ctx["n_substituted"],
             "skipped_names": ctx["skipped"],
+        }
+
+    def kv_substitution_diagnostics(
+        self,
+        viol_messages: list[dict[str, str]],
+        comp_messages: list[dict[str, str]],
+        *,
+        viol_names: list[str],
+        donor_names: list[str],
+        candidate_compliant: str,
+        candidate_violation: str,
+        donor_messages: Optional[list[dict[str, str]]] = None,
+        forced_prefix: str = "def ",
+        token_unit: str = "mean",
+        span_kind: str = "def_name",
+    ) -> dict[str, Any]:
+        """평균 덮어쓰기가 **Key를 Value보다 불리하게 망가뜨리는가**를 진단한다.
+
+        왜 필요한가
+        -----------
+        캐시에 저장된 Key에는 **그 토큰이 있던 위치의 회전(RoPE)이 이미 적용**돼 있다.
+        Value에는 위치 정보가 없다. 그런데 우리는 서로 다른 위치의 조각을 **평균**내어 덮는다.
+        회전 방향이 엇갈린 벡터를 평균하면 서로 지워져 **원래보다 짧은 벡터**가 된다.
+        그러면 "Key를 바꿔도 안 돌아온다"가 어텐션 경로의 성질인지, 우리가 값을 망가뜨린 탓인지
+        구분할 수 없다 — 편향의 방향이 우리 결론과 같으므로 반드시 확인해야 한다.
+
+        무엇을 재나 (층마다)
+        --------------------
+        ``줄어듦 = ‖조각들의 평균‖ / 조각 노름들의 평균``
+          · 1에 가까움 → 조각들이 같은 방향을 봤다. 평균 내도 안 줄었다 = 문제 없음
+          · 많이 작음   → 서로 지워졌다 = 쪼그라든 값을 넣고 있었다
+
+        **Key만 재면 판단할 수 없다.** 서로 다른 토큰을 평균 내면 회전이 없어도 조금은 줄어들기
+        때문이다. 그래서 **Value의 같은 값을 기준선으로 함께 잰다.** 두 값이 비슷하면 회전 탓의
+        추가 손해가 없다는 뜻이고, Key 쪽만 크게 작으면 RoPE 탓이다.
+
+        함께 남기는 것: 조각들 사이의 평균 코사인(방향이 얼마나 흩어졌나)과
+        **덮을 자리와 공여 자리의 위치 차이**(위치가 어긋날수록 회전 위상도 어긋난다).
+
+        점수를 매기지 않으므로 층 스윕보다 훨씬 가볍다 — 프롬프트 forward 몇 번이면 끝난다.
+        """
+        import torch
+
+        if token_unit != "mean":
+            raise ValueError(
+                "이 진단은 평균 덮어쓰기(mean) 규격을 대상으로 한다 "
+                f"(받음: {token_unit!r})"
+            )
+
+        ctx = self._preference_context(
+            viol_messages, comp_messages,
+            viol_names=viol_names, donor_names=donor_names,
+            candidate_compliant=candidate_compliant, candidate_violation=candidate_violation,
+            donor_messages=donor_messages, forced_prefix=forced_prefix, token_unit=token_unit,
+            span_kind=span_kind,
+        )
+        groups = ctx["groups"]
+
+        def shrink_and_spread(t: Any) -> tuple[float, float]:
+            """t: [B, n_kv, n, d] → (줄어듦 비율, 조각들 사이 평균 코사인)."""
+            mean_norm = t.mean(dim=2).norm(dim=-1)              # ‖평균‖        [B, n_kv]
+            norm_mean = t.norm(dim=-1).mean(dim=2)              # 노름의 평균   [B, n_kv]
+            ratio = float((mean_norm / norm_mean.clamp_min(1e-9)).mean())
+            n = t.shape[2]
+            if n < 2:
+                return ratio, 1.0                                # 조각이 하나면 흩어질 것이 없다
+            u = t / t.norm(dim=-1, keepdim=True).clamp_min(1e-9)
+            gram = torch.einsum("bknd,bkmd->bknm", u, u)         # 조각쌍 코사인
+            off = (gram.sum(dim=(-1, -2)) - n) / (n * (n - 1))   # 대각선 제외 평균
+            return ratio, float(off.mean())
+
+        per_layer: dict[int, dict[str, float]] = {}
+        with torch.no_grad():
+            for layer in range(self.num_layers):
+                dk, dv = _cache_kv(ctx["donor_cache"], layer)
+                ks, kc, vs, vc = [], [], [], []
+                for _vps, dps in groups:
+                    r, c = shrink_and_spread(dk[:, :, dps, :]); ks.append(r); kc.append(c)
+                    r, c = shrink_and_spread(dv[:, :, dps, :]); vs.append(r); vc.append(c)
+                k_shrink = sum(ks) / len(ks)
+                v_shrink = sum(vs) / len(vs)
+                per_layer[layer] = {
+                    "key_shrink": k_shrink,             # Key 줄어듦 (1이면 손해 없음)
+                    "value_shrink": v_shrink,           # Value 줄어듦 (회전 없는 기준선)
+                    "key_minus_value": k_shrink - v_shrink,   # 음수가 크면 Key만 손해
+                    "key_piece_cosine": sum(kc) / len(kc),
+                    "value_piece_cosine": sum(vc) / len(vc),
+                }
+
+        # 덮을 자리와 공여 자리의 위치 차이 — 위치가 어긋나면 회전 위상도 어긋난다.
+        offsets = [ (sum(vps) / len(vps)) - (sum(dps) / len(dps)) for vps, dps in groups ]
+        return {
+            "per_layer": per_layer,
+            "S_clean": ctx["s_clean"],
+            "S_base": ctx["s_base"],
+            "n_substituted_tokens": ctx["n_substituted"],
+            "skipped_names": ctx["skipped"],
+            "position_offsets": offsets,
+            "position_offset_abs_mean": sum(abs(o) for o in offsets) / len(offsets),
+            "donor_piece_counts": [len(dps) for _vps, dps in groups],
+            "target_piece_counts": [len(vps) for vps, _dps in groups],
+            "num_layers": self.num_layers,
         }
 
     def name_v_cosine_sweep(
@@ -517,6 +669,16 @@ class ModelHandle:
             camel_vals = _value_cache(self.model(camel_ids, use_cache=True).past_key_values)
             snake_vals = _value_cache(self.model(snake_ids, use_cache=True).past_key_values)
 
+        if token_unit == "mean":
+            # 코사인은 **짝지어진 두 벡터**가 있어야 정의된다. mean-pool은 짝을 없애므로
+            # 개념상 맞지 않는다. 조용히 last로 바꿔치기하면 다른 정렬 단위로 잰 값이
+            # 통일 규격인 척 저장되므로, 여기서 명시적으로 거절한다(§3).
+            raise ValueError(
+                "v 코사인 관측은 token_unit='mean'을 지원하지 않는다 "
+                "(코사인은 1:1 짝이 필요). 이 관측만 'last'로 조건을 따로 만들고, "
+                "정렬 단위가 다르다는 사실을 결과 해석에 명시할 것."
+            )
+
         # 역할별 정렬: 같은 이름의 camel 토큰 위치 ↔ snake 토큰 위치.
         pairs, skipped = align_name_tokens(
             name_positions(camel_text, camel_off, camel_names),
@@ -559,6 +721,7 @@ class ModelHandle:
         forced_prefix: str = "def ",
         max_new_tokens: int = 24,
         token_unit: str = "all",
+        span_kind: str = "def_name",
     ) -> dict[str, Any]:
         """치환 전(baseline)·후(intervened)로 **실제 이름을 생성**한다(step C 생성 기반).
 
@@ -581,16 +744,7 @@ class ModelHandle:
             return enc["input_ids"].to(self.model.device), text, offsets
 
         def name_positions(text, offsets, names):
-            out = []
-            for nm in names:
-                spans = find_char_spans(text, [f"def {nm}("])
-                if not spans:
-                    out.append([]); continue
-                s, e = spans[0]
-                s, e = s + 4, e - 1
-                out.append([ti for ti, (ts, te) in enumerate(offsets)
-                            if te > ts and ts < e and te > s])
-            return out
+            return _locate_target_tokens(text, offsets, names, span_kind)
 
         viol_ids, viol_text, viol_off = prefix(viol_messages)
         d_ids, donor_text, donor_off = prefix(donor_messages)
@@ -600,11 +754,22 @@ class ModelHandle:
             viol_cache = self.model(viol_ids[:, :-1], use_cache=True).past_key_values
             donor_cache = self.model(d_ids[:, :-1], use_cache=True).past_key_values
 
-        pairs, skipped = align_name_tokens(
-            name_positions(viol_text, viol_off, viol_names),
-            name_positions(donor_text, donor_off, donor_names),
-            mode=token_unit,
-        )
+        vpos = name_positions(viol_text, viol_off, viol_names)
+        dpos = name_positions(donor_text, donor_off, donor_names)
+        if token_unit == "mean":
+            # 선호 점수 경로(_score_layer_kind)와 **같은** mean-pool 규격을 쓴다(§3 통일).
+            groups, skipped = align_name_groups(vpos, dpos)
+            pairs = None
+            n_sub = sum(len(vp) for vp, _ in groups)
+        else:
+            pairs, skipped = align_name_tokens(vpos, dpos, mode=token_unit)
+            groups = None
+            n_sub = len(pairs)
+        if n_sub == 0:
+            raise ValueError(
+                "치환할 토큰 자리를 하나도 찾지 못했다 — 개입 없이 생성하는 것과 같아진다. "
+                f"(정렬 단위={token_unit!r}, 구간 종류={span_kind!r})"
+            )
 
         def greedy(cache):
             c = _clone_cache(cache)
@@ -623,14 +788,29 @@ class ModelHandle:
 
         text_baseline = greedy(viol_cache)                 # 개입 없음
 
+        if kind not in ("key", "value", "key_value"):
+            raise NotImplementedError(f"치환으로 구현되지 않은 개입 종류: {kind!r}")
+
         edited = _clone_cache(viol_cache)                  # 개입: layer만 공여값으로
         ek, ev = _cache_kv(edited, layer)
         dk, dv = _cache_kv(donor_cache, layer)
-        for vp, dp in pairs:
-            if kind in ("key", "key_value"):
-                ek[:, :, vp, :] = dk[:, :, dp, :]
-            if kind in ("value", "key_value"):
-                ev[:, :, vp, :] = dv[:, :, dp, :]
+        edit_k = kind in ("key", "key_value")
+        edit_v = kind in ("value", "key_value")
+        if groups is not None:                              # mean-pool 경로
+            for vps, dps in groups:
+                km = dk[:, :, dps, :].mean(dim=2) if edit_k else None
+                vm = dv[:, :, dps, :].mean(dim=2) if edit_v else None
+                for vp in vps:
+                    if edit_k:
+                        ek[:, :, vp, :] = km
+                    if edit_v:
+                        ev[:, :, vp, :] = vm
+        else:                                               # 1:1 pairs 경로
+            for vp, dp in pairs:
+                if edit_k:
+                    ek[:, :, vp, :] = dk[:, :, dp, :]
+                if edit_v:
+                    ev[:, :, vp, :] = dv[:, :, dp, :]
         text_intervened = greedy(edited)
 
         return {
@@ -638,7 +818,7 @@ class ModelHandle:
             "text_intervened": forced_prefix + text_intervened,
             "layer": layer,
             "kind": kind,
-            "n_substituted_tokens": len(pairs),
+            "n_substituted_tokens": n_sub,
             "skipped_names": skipped,
         }
 
@@ -648,7 +828,7 @@ def _locate_target_tokens(text, offsets, names, span_kind: str = "def_name"):
 
     span_kind:
       "def_name" = `def <nm>(`에서 이름 부분만(stepC/step1 코드 이름).
-      "literal"  = 문자열 nm 그대로의 **첫 등장**(step4 지침 지시어 "camelCase").
+      "literal"  = 문자열 nm 그대로의 **첫 등장**(step5 지침 지시어 "camelCase").
                    지침 문장의 지시어는 rule 문장이 closed 문장보다 앞서므로 첫 등장이
                    실제 지시어(rule) 위치가 된다.
     한쪽이라도 못 찾으면 그 이름은 빈 리스트 → align_name_tokens가 스킵한다.
