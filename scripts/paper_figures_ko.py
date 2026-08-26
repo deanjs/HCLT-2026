@@ -105,12 +105,6 @@ def fig_cliff(out: Path):
                 label=f"{SHORT[m]} · {'camelCase' if tgt == 'camel' else 'snake_case'} 요구")
         ax.fill_between(xs, [a - b for a, b in pts], [a + b for a, b in pts],
                         color=color, alpha=0.15, linewidth=0)
-    ax.annotate("기본 선호와 부딪히는 요구", xy=(4.4, 0.28), xytext=(6.2, 0.42),
-                fontsize=6.8, color="0.25", ha="left",
-                arrowprops=dict(arrowstyle="->", color="0.45", linewidth=0.7))
-    ax.annotate("부딪히지 않는 요구", xy=(9.4, 1.00), xytext=(9.0, 0.80),
-                fontsize=6.8, color="0.25", ha="center",
-                arrowprops=dict(arrowstyle="->", color="0.45", linewidth=0.7))
     ax.set_xlabel("앞선 코드에 놓인 위반 이름의 수 (12개 중)")
     ax.set_ylabel("지침 준수율")
     ax.set_ylim(-0.05, 1.08)
@@ -274,32 +268,26 @@ def fig_score_vs_real(out: Path):
         if ex["method"] == "value_add":
             gn[r["condition"]["model"]["family"]][float(ex["strength"])].append(_real(ex))
 
-    S = [1.0, 2.0, 4.0, 8.0]
+    S = [0.0, 1.0, 2.0, 4.0, 8.0]
     fig, ax = plt.subplots(figsize=(3.3, 2.4))
     x = list(range(len(S)))
-    for off, (src, color, lab) in zip((-0.5, 0.5),
-                                      ((sc, "#b9cbe0", "선호 점수로 채점"),
-                                       (gn, C_VAL, "생성한 이름으로 채점"))):
-        cx = [i + off * 0.36 for i in x]
-        per = [[st.mean(src[m][s]) for m in MODELS if src[m].get(s)] for s in S]
-        ax.bar(cx, [st.mean(v) for v in per], 0.36, color=color, label=lab,
-               edgecolor="white", linewidth=0.4, zorder=2)
-        for c, v in zip(cx, per):                       # 모델 4개를 점으로 겹쳐 찍는다
-            ax.plot([c + (k - 1.5) * 0.055 for k in range(len(v))], v, linestyle="",
-                    marker="o", ms=2.2, mfc="none", mec="0.25", mew=0.6, zorder=3)
-    ax.annotate("점수는 성공이라 하는데\n남은 이름은 없다", xy=(3.15, 0.06),
-                xytext=(2.62, 0.34), fontsize=6.6, color="0.25", ha="center",
-                va="bottom", linespacing=1.35,
-                arrowprops=dict(arrowstyle="->", color="0.45", linewidth=0.7,
-                                shrinkA=1, shrinkB=2))
+    for src, color, ls, lab in ((sc, "#8fa9c6", ":", "선호 점수로 채점"),
+                                (gn, C_VAL, "-", "생성한 이름으로 채점")):
+        per = {m: [st.mean(src[m][s]) if src[m].get(s) else 0.0 for s in S] for m in MODELS}
+        for m in MODELS:                                # 모델 하나하나를 옅게 깔고
+            ax.plot(x, per[m], color=color, alpha=0.30, linewidth=0.7,
+                    linestyle=ls, zorder=2)
+        ax.plot(x, [st.mean([per[m][i] for m in MODELS]) for i in x],   # 평균을 굵게
+                color=color, linewidth=2.1, linestyle=ls, marker="o", ms=4.2,
+                mfc="white", mew=1.7, label=lab, zorder=3)
     ax.set_xticks(x)
-    ax.set_xticklabels([f"{s:g}" for s in S])
-    ax.set_xlabel("값을 미는 세기")
+    ax.set_xticklabels([f"{v:g}" for v in S])
+    ax.set_xlabel("값을 미는 세기  (0 = 개입하지 않음)")
     ax.set_ylabel("성공으로 세어진 비율")
-    ax.set_ylim(0, 1.12)
-    ax.legend(frameon=False, ncol=2, handlelength=1.3, columnspacing=1.0,
+    ax.set_ylim(-0.04, 1.12)
+    ax.legend(frameon=False, ncol=2, handlelength=1.6, columnspacing=1.0,
               loc="lower center", bbox_to_anchor=(0.5, 1.01), borderaxespad=0.0)
-    ax.grid(axis="y", alpha=0.22, linewidth=0.4)
+    ax.grid(alpha=0.22, linewidth=0.4)
     fig.tight_layout(pad=0.3)
     _save(fig, out, "ko_score_vs_real")
 
