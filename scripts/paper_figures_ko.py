@@ -227,37 +227,51 @@ def _step5_curves():
     return out
 
 
+def _peak(cur):
+    """Value 순효과가 가장 큰 층과 그 층에서의 Value·Key 값."""
+    i = max(range(len(cur["layers"])), key=lambda i: cur["value"][i])
+    return cur["layers"][i], cur["value"][i], cur["key"][i]
+
+
 def fig_key_vs_value(out: Path):
-    """층을 가로축에 두고 Value 곡선만 그린다. Key는 전부 0 근처라 띠 하나로 묶는다."""
+    """봉우리 층에서 Key와 Value를 세로선으로 이어 한눈에 벌어짐을 보인다."""
     code, instr = _step3_curves(), _step5_curves()
     COLOR = {"qwen": "#2e6fbf", "deepseek": "#e08214",
              "llama": "#2e8b57", "stability": "#c0392b"}
+    ORDER = ["qwen", "deepseek", "stability", "llama"]   # 범용 모델을 맨 뒤로
+    TIGHT = {"qwen": "Qwen", "deepseek": "DeepSeek",
+             "stability": "Stable", "llama": "Llama"}
 
-    fig, ax = plt.subplots(figsize=(3.3, 2.6))
-    lo, hi = [], []                       # Key 곡선 16개가 들어갈 띠
-    for src, ls in ((code, "--"), (instr, "-")):
-        for m in MODELS:
+    fig, ax = plt.subplots(figsize=(3.3, 2.4))
+    xs, labels = [], []
+    for gi, (src, gname) in enumerate(((code, "앞선 코드"), (instr, "지침"))):
+        for mi, m in enumerate(ORDER):
             if m not in src:
                 continue
-            cur = src[m]
-            depth = [L / (cur["layers"][-1] or 1) for L in cur["layers"]]
-            ax.plot(depth, cur["value"], color=COLOR[m], linestyle=ls, linewidth=1.3)
-            lo.append(min(cur["key"])); hi.append(max(cur["key"]))
-    ax.axhspan(min(lo), max(hi), color="0.55", alpha=0.30, linewidth=0, zorder=0)
-    ax.axhline(0, color="black", linewidth=0.5)
-    handles = [plt.Line2D([], [], color=COLOR[m], linewidth=1.5, label=SHORT[m])
-               for m in MODELS]
-    handles += [plt.Line2D([], [], color="0.35", linestyle="-", label="지침"),
-                plt.Line2D([], [], color="0.35", linestyle="--", label="앞선 코드"),
-                plt.Rectangle((0, 0), 1, 1, color="0.55", alpha=0.30,
-                              label="Key 곡선 16개의 전 범위")]
-    ax.legend(handles=handles, frameon=False, ncol=3, fontsize=6.0,
-              handlelength=1.4, columnspacing=0.7,
+            L, v, k = _peak(src[m])
+            x = gi * 5.0 + mi
+            xs.append(x); labels.append(f"{TIGHT[m]}\nL{L}")
+            ax.vlines(x, k, v, color=COLOR[m], linewidth=1.4, zorder=2)
+            ax.plot(x, v, marker="o", ms=5.2, color=COLOR[m], zorder=3)
+            ax.plot(x, k, marker="s", ms=4.0, mfc="white", mec="0.35",
+                    mew=1.0, linestyle="", zorder=4)
+    ax.axhline(0, color="black", linewidth=0.6)
+    ax.axvline(4.0, color="0.75", linewidth=0.7, linestyle=":")
+    ax.text(1.5, 0.96, "앞선 코드를 바꿈", fontsize=6.6, color="0.3", ha="center")
+    ax.text(6.5, 0.96, "지침을 바꿈", fontsize=6.6, color="0.3", ha="center")
+    ax.set_xticks(xs)
+    ax.set_xticklabels(labels, fontsize=5.6)
+    ax.set_ylabel("표기를 되돌린 정도 (순효과)", fontsize=8)
+    ax.set_ylim(-0.08, 1.06)
+    ax.set_xlim(-0.7, 8.7)
+    handles = [plt.Line2D([], [], marker="o", ms=5.2, color="0.35", linestyle="",
+                          label="Value만 치환"),
+               plt.Line2D([], [], marker="s", ms=4.0, mfc="white", mec="0.35",
+                          mew=1.0, linestyle="", label="Key만 치환")]
+    ax.legend(handles=handles, frameon=False, ncol=2, fontsize=6.8,
+              handlelength=1.0, columnspacing=1.2,
               loc="lower center", bbox_to_anchor=(0.5, 1.01), borderaxespad=0.0)
-    ax.set_xlabel("층의 상대 깊이")
-    ax.set_ylabel("표기를 되돌린 정도 (순효과)")
-    ax.set_xlim(0, 1.0)
-    ax.grid(alpha=0.22, linewidth=0.4)
+    ax.grid(axis="y", alpha=0.22, linewidth=0.4)
     fig.tight_layout(pad=0.3)
     _save(fig, out, "ko_key_vs_value")
 
@@ -342,24 +356,25 @@ def fig_score_vs_real(out: Path):
              "llama": "#2e8b57", "stability": "#c0392b"}
     MARK = {"qwen": "o", "deepseek": "s", "llama": "^", "stability": "D"}
 
-    fig, (a1, a2) = plt.subplots(1, 2, figsize=(6.6, 2.5))
+    fig, (a1, a2) = plt.subplots(1, 2, figsize=(3.35, 1.95))
     x = list(range(len(S)))
     for m in MODELS:
         a1.plot(x, [st.mean(gn[m][v]) if gn[m].get(v) else 0.0 for v in S],
-                color=COLOR[m], marker=MARK[m], ms=3.6, label=SHORT[m])
+                color=COLOR[m], marker=MARK[m], ms=2.6, linewidth=1.1, label=SHORT[m])
         a2.plot(x, [st.mean(rc[m][v]) if rc[m].get(v) else 0.0 for v in S],
-                color=COLOR[m], marker=MARK[m], ms=3.6)
-    a1.set_ylabel("실제 준수율"); a1.set_ylim(-0.05, 1.10)
-    a1.set_title("생성한 이름으로 재면", fontsize=8.5, pad=4)
-    a2.set_ylabel("선호 점수 되돌림률"); a2.set_ylim(-0.15, 4.8)
-    a2.set_title("선호 점수로 재면", fontsize=8.5, pad=4)
+                color=COLOR[m], marker=MARK[m], ms=2.6, linewidth=1.1)
+    a1.set_ylabel("실제 준수율", fontsize=7); a1.set_ylim(-0.05, 1.10)
+    a1.set_title("생성한 이름", fontsize=7.5, pad=3)
+    a2.set_ylabel("되돌림률", fontsize=7); a2.set_ylim(-0.15, 4.8)
+    a2.set_title("선호 점수", fontsize=7.5, pad=3)
     for ax in (a1, a2):
         ax.set_xticks(x)
-        ax.set_xticklabels([f"{v:g}" for v in S])
-        ax.set_xlabel("값을 미는 세기  (0 = 개입하지 않음)", fontsize=8)
+        ax.set_xticklabels([f"{v:g}" for v in S], fontsize=6.5)
+        ax.tick_params(axis="y", labelsize=6.5)
         ax.grid(alpha=0.22, linewidth=0.4)
-    fig.legend(frameon=False, ncol=4, handlelength=1.7, columnspacing=1.6,
-               loc="lower center", bbox_to_anchor=(0.5, 0.99))
+    fig.supxlabel("값을 미는 세기  (0 = 개입하지 않음)", fontsize=7.5, y=0.005)
+    fig.legend(frameon=False, ncol=4, handlelength=1.3, columnspacing=0.9,
+               fontsize=6.3, loc="lower center", bbox_to_anchor=(0.5, 0.99))
     fig.tight_layout(pad=0.4)
     _save(fig, out, "ko_score_vs_real")
 
