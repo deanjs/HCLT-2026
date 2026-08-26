@@ -338,26 +338,32 @@ def fig_grid(out: Path):
                 ax.set_visible(False); continue
             cur = src[m]
             LL = cur["layers"]
-            ax.plot(LL, cur["value"], color=C[m], linewidth=1.0, label="Value")
-            ax.plot(LL, cur["key"], color="0.45", linewidth=0.9, linestyle=":", label="Key")
+            # 0선을 먼저 옅게 깔고, Key 곡선을 그 위에 올린다.
+            # Key는 값이 0 근처라 순서를 뒤집으면 축선에 묻혀 보이지 않는다.
+            ax.axhline(0, color="0.7", linewidth=0.5, zorder=1)
             lo = [v - c for v, c in zip(cur["value"], cur["value_ci"])]
             hi = [v + c for v, c in zip(cur["value"], cur["value_ci"])]
-            ax.fill_between(LL, lo, hi, color=C[m], alpha=0.18, linewidth=0)
-            ax.axhline(0, color="black", linewidth=0.5)
+            ax.fill_between(LL, lo, hi, color=C[m], alpha=0.18, linewidth=0, zorder=2)
+            ax.plot(LL, cur["value"], color=C[m], linewidth=1.0, label="Value", zorder=3)
+            ax.plot(LL, cur["key"], color="#333333", linewidth=1.0, linestyle=(0, (1, 1.6)),
+                    label="Key", zorder=4)
             k = _peak(cur)
             if k is not None:
                 ax.annotate(f"L{LL[k]}", xy=(LL[k], cur["value"][k]),
                             xytext=(2, -1), textcoords="offset points",
                             fontsize=6.2, color=C[m], va="top")
             else:
-                ax.text(0.5, 0.86, "순효과 없음", transform=ax.transAxes,
-                        fontsize=6.2, color="0.35", ha="center")
+                # 봉우리라 부를 값이 없어도 어느 층을 골랐는지는 숨기지 않는다
+                a_ = max(range(len(LL)), key=lambda i: cur["value"][i])
+                ax.axvline(LL[a_], color="0.55", linewidth=0.6, linestyle="--", zorder=0)
+                ax.text(0.5, 0.9, f"L{LL[a_]} · 유의하지 않음", transform=ax.transAxes,
+                        fontsize=6.0, color="0.35", ha="center", va="top")
 
         # 지침 개입이 먹히는 층을 세 판에 같은 자리로 긋는다
         if pk_layer is not None:
             for i in range(3):
                 axes[i][j].axvline(pk_layer, color="black", linewidth=0.6,
-                                   linestyle="--", alpha=0.55)
+                                   linestyle="--", alpha=0.45, zorder=0)
 
     for row in axes:
         for ax in row:
@@ -370,7 +376,9 @@ def fig_grid(out: Path):
                        ("토큰당 어텐션", "앞선 코드 개입\n순효과", "지침 개입\n순효과")):
         ax.set_ylabel(lab, fontsize=7.2)
     axes[0][0].legend(fontsize=6.2, loc="upper left", handlelength=1.2, borderaxespad=0.25)
-    axes[1][0].legend(fontsize=6.2, loc="upper left", handlelength=1.2, borderaxespad=0.25)
+    for i in (1, 2):
+        axes[i][0].legend(fontsize=6.2, loc="upper left", handlelength=1.4,
+                          borderaxespad=0.25)
     fig.tight_layout(pad=0.3, h_pad=0.7, w_pad=0.9)
     _save(fig, out, "ko_grid")
 
