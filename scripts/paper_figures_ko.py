@@ -91,9 +91,9 @@ matplotlib.rcParams.update({
     "mathtext.fontset": "dejavuserif",
 })
 
-# 채도를 낮춘 색 — 흑백 인쇄에서도 명도가 갈린다
-C = {"qwen": "#3B6EA5", "deepseek": "#D08C3C",
-     "stability": "#B04A4A", "llama": "#4E8A5B"}
+# 색은 둘만 쓴다. 모델은 판을 나눠 구분하므로 색으로 가를 필요가 없다.
+RED, GRAY = "#B03A3A", "#8C8C8C"
+C = {m: RED for m in ("qwen", "deepseek", "stability", "llama")}
 ORDER = ["qwen", "deepseek", "stability", "llama"]   # 범용 모델을 맨 뒤로
 
 
@@ -309,84 +309,71 @@ def _attention_curves():
     return obs
 
 
-def fig_grid(out: Path):
-    """세 관측을 한 판에 — 세로는 무엇을 쟀나, 가로는 어느 모델인가.
-
-    같은 열이 같은 모델이므로 '많이 보는 층'과 '개입이 먹히는 층'을 위아래로 바로 견준다.
-    """
+def fig_attention(out: Path):
+    """관측 — 지침과 앞선 코드를 층마다 얼마나 보는가. 모델당 판 하나."""
     obs = _attention_curves()
-    code, instr = _step3_curves(), _step5_curves()
+    c5 = _step5_curves()
 
-    fig, axes = plt.subplots(3, len(ORDER), figsize=(7.0, 4.05))
-    for j, m in enumerate(ORDER):
-        pk = _peak(instr[m]) if m in instr else None
-        pk_layer = instr[m]["layers"][pk] if pk is not None else None
-
-        # ① 토큰당 어텐션
-        ax = axes[0][j]
+    fig, axes = plt.subplots(2, 2, figsize=(3.3, 2.65))
+    for ax, m in zip(axes.ravel(), ORDER):
         L = sorted(obs[m])
-        # 점선은 아래 두 행에서 Key를 뜻한다. 여기서 또 쓰면 같은 모양이 두 뜻이 된다.
-        # 첫째 행은 둘 다 실선으로 두고 색과 굵기로만 가른다.
         ins = [st.mean(obs[m][i]["instr"]) for i in L]
         cod = [st.mean(obs[m][i]["code"]) for i in L]
-        ax.fill_between(L, cod, ins, where=[a_ >= b_ for a_, b_ in zip(ins, cod)],
-                        color=C[m], alpha=0.13, linewidth=0, interpolate=True)
-        ax.plot(L, cod, color="0.62", linewidth=1.0, label="앞선 코드")
-        ax.plot(L, ins, color=C[m], linewidth=1.2, label="지침")
-        ax.set_title(SHORT[m], fontsize=8, pad=3)
-
-        # ②③ 개입의 순효과
-        for i, src in enumerate((code, instr), start=1):
-            ax = axes[i][j]
-            if m not in src:
-                ax.set_visible(False); continue
-            cur = src[m]
-            LL = cur["layers"]
-            # 0선을 먼저 옅게 깔고, Key 곡선을 그 위에 올린다.
-            # Key는 값이 0 근처라 순서를 뒤집으면 축선에 묻혀 보이지 않는다.
-            ax.axhline(0, color="0.7", linewidth=0.5, zorder=1)
-            lo = [v - c for v, c in zip(cur["value"], cur["value_ci"])]
-            hi = [v + c for v, c in zip(cur["value"], cur["value_ci"])]
-            ax.fill_between(LL, lo, hi, color=C[m], alpha=0.18, linewidth=0, zorder=2)
-            ax.plot(LL, cur["value"], color=C[m], linewidth=1.0, label="Value", zorder=3)
-            ax.plot(LL, cur["key"], color="#333333", linewidth=1.0, linestyle=(0, (1, 1.6)),
-                    label="Key", zorder=4)
-            k = _peak(cur)
-            if k is not None:
-                ax.annotate(f"L{LL[k]}", xy=(LL[k], cur["value"][k]),
-                            xytext=(2, -1), textcoords="offset points",
-                            fontsize=6.2, color=C[m], va="top")
-            else:
-                # 봉우리라 부를 값이 없어도 어느 층을 골랐는지는 숨기지 않는다
-                a_ = max(range(len(LL)), key=lambda i: cur["value"][i])
-                ax.axvline(LL[a_], color="0.55", linewidth=0.6, linestyle="--", zorder=0)
-                ax.text(0.5, 0.9, f"L{LL[a_]} · 유의하지 않음", transform=ax.transAxes,
-                        fontsize=6.0, color="0.35", ha="center", va="top")
-
-        # 지침 개입이 먹히는 층을 세 판에 같은 자리로 긋는다
-        if pk_layer is not None:
-            for i in range(3):
-                axes[i][j].axvline(pk_layer, color="black", linewidth=0.6,
-                                   linestyle="--", alpha=0.45, zorder=0)
-
-    for row in axes:
-        for ax in row:
-            ax.tick_params(labelsize=6.2)
-            ax.margins(y=0.20)
-            _tidy(ax)
-    for ax in axes[2]:
-        ax.set_xlabel("층", fontsize=7.5)
-    for ax, lab in zip(axes[:, 0],
-                       ("토큰당 어텐션", "앞선 코드 개입\n순효과", "지침 개입\n순효과")):
-        ax.set_ylabel(lab, fontsize=7.2)
+        ax.plot(L, cod, color=GRAY, linewidth=1.0, label="앞선 코드")
+        ax.plot(L, ins, color=RED, linewidth=1.2, label="지침")
+        k = _peak(c5[m]) if m in c5 else None
+        if k is not None:
+            ax.axvline(c5[m]["layers"][k], color="black", linewidth=0.6,
+                       linestyle="--", alpha=0.5, zorder=0)
+        ax.set_title(SHORT[m], fontsize=7.5, pad=2.5)
+        ax.tick_params(labelsize=6.2)
+        ax.margins(y=0.20)
+        _tidy(ax)
     h, l = axes[0][0].get_legend_handles_labels()
     axes[0][0].legend(h[::-1], l[::-1], fontsize=6.2, loc="upper left",
                       handlelength=1.2, borderaxespad=0.25)
-    for i in (1, 2):
-        axes[i][0].legend(fontsize=6.2, loc="upper left", handlelength=1.4,
-                          borderaxespad=0.25)
+    for ax in axes[1]:
+        ax.set_xlabel("층", fontsize=7.5)
+    for ax in axes[:, 0]:
+        ax.set_ylabel("토큰당 어텐션", fontsize=7)
     fig.tight_layout(pad=0.3, h_pad=0.7, w_pad=0.9)
-    _save(fig, out, "ko_grid")
+    _save(fig, out, "ko_attention")
+
+
+def fig_intervene(out: Path):
+    """개입 — 봉우리 층에서 Value와 Key를 각각 치환했을 때의 순효과."""
+    code, instr = _step3_curves(), _step5_curves()
+
+    fig, axes = plt.subplots(1, 2, figsize=(3.3, 2.0))
+    for ax, (src, title) in zip(axes, ((code, "(가) 앞선 코드를 바꿈"),
+                                       (instr, "(나) 지침을 바꿈"))):
+        x = list(range(len(ORDER)))
+        for off, key, face, lab in ((-0.5, "value", RED, "Value"),
+                                    (0.5, "key", GRAY, "Key")):
+            ys, es, cols = [], [], []
+            for m in ORDER:
+                if m not in src:
+                    ys.append(float("nan")); es.append(0.0); cols.append(GRAY); continue
+                k = max(range(len(src[m]["layers"])), key=lambda i: src[m]["value"][i])
+                ys.append(src[m][key][k]); es.append(src[m][key + "_ci"][k])
+                cols.append(face)
+            ax.bar([i + off * 0.38 for i in x], ys, 0.38, yerr=es, capsize=1.4,
+                   color=cols, linewidth=0, label=lab,
+                   error_kw={"linewidth": 0.6, "ecolor": "black"})
+        ax.axhline(0, color="black", linewidth=0.6)
+        ax.set_xticks(x)
+        TIGHT = {"qwen": "Qwen", "deepseek": "DeepSeek",
+                 "stability": "Stable", "llama": "Llama"}
+        ax.set_xticklabels([f"{TIGHT[m]}\nL{src[m]['layers'][max(range(len(src[m]['layers'])), key=lambda i: src[m]['value'][i])]}"
+                            if m in src else TIGHT[m] for m in ORDER], fontsize=6.0)
+        ax.set_title(title, fontsize=7.5, pad=3)
+        ax.tick_params(axis="y", labelsize=6.5)
+        ax.margins(y=0.16)
+        _tidy(ax)
+    axes[0].set_ylabel("순효과", fontsize=7.5)
+    axes[0].legend(fontsize=6.4, loc="upper left", handlelength=1.1, borderaxespad=0.25)
+    fig.tight_layout(pad=0.3, w_pad=1.0)
+    _save(fig, out, "ko_intervene")
 
 
 # ── 그림 3·4. step6 ──────────────────────────────────────────────────────
@@ -396,6 +383,49 @@ TASK_WORDS = ("remove", "duplicat", "dedup", "uniq", "distinct")
 def _real(ex) -> float:
     n = ex["name"]
     return 1.0 if (ex["compliant"] and n and any(w in n.lower() for w in TASK_WORDS)) else 0.0
+
+
+def fig_method(out: Path):
+    """처방 — 조향을 건 채로 실제 생성한 이름의 준수율.
+
+    무개입은 네 모델 모두 0.000이라 막대를 세우지 않고 캡션에서 밝힌다.
+    """
+    g = defaultdict(lambda: defaultdict(list))
+    for r in load("step6_steer-generate"):
+        ex = r["metrics"]["extra"]
+        m = r["condition"]["model"]["family"]
+        if ex["method"] == "value_add":
+            key = ("값 조향", float(ex["strength"]))
+        elif ex["method"] == "attn_amplify":
+            key = ("어텐션 증폭", (float(ex["psi_target"]), ex.get("span") or ""))
+        else:
+            key = ("무개입", 0)
+        g[m][key].append(_real(ex))
+
+    def best(m, name):
+        c = [v for k, v in g[m].items() if k[0] == name]
+        return max(c, key=st.mean) if c else []
+
+    TIGHT = {"qwen": "Qwen", "deepseek": "DeepSeek",
+             "stability": "Stable", "llama": "Llama"}
+    fig, ax = plt.subplots(figsize=(3.3, 1.95))
+    x = list(range(len(ORDER)))
+    for off, (name, col) in zip((-0.5, 0.5), (("값 조향", RED), ("어텐션 증폭", GRAY))):
+        ys, es = zip(*[ci95(best(m, name)) for m in ORDER])
+        ax.bar([i + off * 0.38 for i in x], ys, 0.38, yerr=es, capsize=1.4,
+               color=col, linewidth=0, label=name,
+               error_kw={"linewidth": 0.6, "ecolor": "black"})
+    ax.axhline(0, color="black", linewidth=0.6)
+    ax.set_xticks(x)
+    ax.set_xticklabels([TIGHT[m] for m in ORDER], fontsize=7)
+    ax.set_ylabel("실제 준수율", fontsize=7.5)
+    ax.set_ylim(0, 1.10); ax.set_yticks([0, 0.5, 1.0])
+    ax.set_xlim(-0.6, len(ORDER) - 0.4)
+    ax.legend(ncol=2, fontsize=6.6, loc="lower center", bbox_to_anchor=(0.5, 1.0),
+              borderaxespad=0.0, handlelength=1.1)
+    _tidy(ax)
+    fig.tight_layout(pad=0.25)
+    _save(fig, out, "ko_method")
 
 
 def fig_score_vs_real(out: Path):
@@ -426,11 +456,14 @@ def fig_score_vs_real(out: Path):
 
     S = [0.0, 1.0, 2.0, 4.0, 8.0]
     MARK = {"qwen": "o", "deepseek": "s", "stability": "D", "llama": "^"}
+    STYLE = {"qwen": (RED, "-"), "deepseek": (GRAY, "-"),
+             "stability": (RED, "--"), "llama": (GRAY, "--")}
 
     fig, (a1, a2) = plt.subplots(1, 2, figsize=(3.35, 1.95))
     x = list(range(len(S)))
     for m in ORDER:
-        kw = dict(color=C[m], marker=MARK[m], ms=2.8, linewidth=1.1,
+        col, ls = STYLE[m]
+        kw = dict(color=col, linestyle=ls, marker=MARK[m], ms=2.8, linewidth=1.1,
                   markeredgewidth=0)
         a1.plot(x, [st.mean(gn[m][v]) if gn[m].get(v) else 0.0 for v in S],
                 label=SHORT[m], **kw)
@@ -466,7 +499,9 @@ def main() -> None:
     if "--out" in sys.argv:
         root = Path(sys.argv[sys.argv.index("--out") + 1])
     jobs = [(fig_cliff, "docs/step1/figures"),
-            (fig_grid, "docs/step3/figures"),
+            (fig_attention, "docs/step4/figures"),
+            (fig_intervene, "docs/step3/figures"),
+            (fig_method, "docs/step6/figures"),
             (fig_score_vs_real, "docs/step6/figures")]
     for fn, d in jobs:
         fn(root if root else Path(d))
