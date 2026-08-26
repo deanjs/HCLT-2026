@@ -93,18 +93,17 @@ def fig_cliff(out: Path):
     fig, ax = plt.subplots(figsize=(3.3, 2.5))
     series = [("qwen", "camel", "#2e6fbf", "-", "o"),
               ("stability", "camel", "#c0392b", "-", "s"),
-              ("qwen", "snake", "#2e6fbf", "--", "o"),
-              ("stability", "snake", "#c0392b", "--", "s")]
+              ("qwen", "snake", "#2e6fbf", "--", "^"),
+              ("stability", "snake", "#c0392b", ":", "D")]
     for m, tgt, color, ls, mk in series:
         k = (m, tgt)
         if k not in by:
             continue
         xs = sorted(by[k])
-        pts = [ci95(by[k][x]) for x in xs]
-        ax.plot(xs, [a for a, _ in pts], marker=mk, ms=3, color=color, linestyle=ls,
-                label=f"{SHORT[m]} · {'camelCase' if tgt == 'camel' else 'snake_case'} 요구")
-        ax.fill_between(xs, [a - b for a, b in pts], [a + b for a, b in pts],
-                        color=color, alpha=0.15, linewidth=0)
+        ax.plot(xs, [st.mean(by[k][x]) for x in xs], marker=mk, ms=3.4,
+                color=color, linestyle=ls, markevery=2, markerfacecolor="white",
+                markeredgewidth=1.1,
+                label=f"{SHORT[m]} · {'camelCase' if tgt == 'camel' else 'snake_case'}")
     ax.set_xlabel("앞선 코드에 놓인 위반 이름의 수 (12개 중)")
     ax.set_ylabel("지침 준수율")
     ax.set_ylim(-0.05, 1.08)
@@ -171,29 +170,94 @@ def _step5_net():
             for m in MODELS if treat[m] and ctrl[m]}
 
 
+def _step3_curves():
+    """선행 코드 쪽 층별 순효과 = (camel을 덮었을 때) − (snake를 덮었을 때)."""
+    cube = defaultdict(lambda: defaultdict(lambda: defaultdict(lambda: defaultdict(dict))))
+    for r in load("step3_code-cause"):
+        m = r["condition"]["model"]["family"]
+        b = r["condition"]["preceding"]["pool_block"]
+        d = r["metrics"]["extra"]["donor"]
+        for L, v in r["metrics"]["per_layer"].items():
+            for k in ("key", "value"):
+                x = v.get(f"{k}__recovery")
+                if x is not None:
+                    cube[m][d][int(L)][k][b] = x
+    out = {}
+    for m in MODELS:
+        layers = sorted(cube[m]["unrelated_camel"])
+        cur = {"layers": layers}
+        for k in ("value", "key"):
+            ys = []
+            for L in layers:
+                a_, b_ = cube[m]["unrelated_camel"][L][k], cube[m]["unrelated_snake"][L][k]
+                ys.append(st.mean([a_[i] - b_[i] for i in sorted(set(a_) & set(b_))]))
+            cur[k] = ys
+        out[m] = cur
+    return out
+
+
+def _step5_curves():
+    """지침 쪽 층별 순효과 = (반대 표기를 덮었을 때) − (같은 지시어를 덮었을 때)."""
+    def gather(steps, donor=None):
+        acc = defaultdict(lambda: defaultdict(list))
+        rows = [r for st_ in steps for r in load(st_)]
+        for r in rows:
+            ex = r["metrics"]["extra"]
+            if ex.get("undecidable") or (donor and ex.get("donor") != donor):
+                continue
+            m = r["condition"]["model"]["family"]
+            for L, v in r["metrics"]["per_layer"].items():
+                for k in ("value", "key"):
+                    x = v.get(f"{k}__recovery")
+                    if x is not None:
+                        acc[m][(int(L), k)].append(x)
+        return acc
+
+    treat = gather(["step5_instr-cause"])
+    ctrl = gather([f"step5_control_sweep_{m}" for m in MODELS], "control_self")
+    out = {}
+    for m in MODELS:
+        layers = sorted({L for L, _ in treat[m]} & {L for L, _ in ctrl[m]})
+        if not layers:
+            continue
+        cur = {"layers": layers}
+        for k in ("value", "key"):
+            cur[k] = [st.mean(treat[m][(L, k)]) - st.mean(ctrl[m][(L, k)]) for L in layers]
+        out[m] = cur
+    return out
+
+
 def fig_key_vs_value(out: Path):
-    code, instr = _step3_net(), _step5_net()
+    """층을 가로축에 두고 Value 곡선만 그린다. Key는 전부 0 근처라 띠 하나로 묶는다."""
+    code, instr = _step3_curves(), _step5_curves()
+    COLOR = {"qwen": "#2e6fbf", "deepseek": "#e08214",
+             "llama": "#2e8b57", "stability": "#c0392b"}
+
     fig, ax = plt.subplots(figsize=(3.3, 2.6))
-    x = list(range(len(MODELS)))
-    w = 0.2
-    bars = [(code, "value", -1.5, C_VAL, "//", "앞선 코드 · Value"),
-            (code, "key", -0.5, C_KEY, "//", "앞선 코드 · Key"),
-            (instr, "value", 0.5, C_VAL, "", "지침 · Value"),
-            (instr, "key", 1.5, C_KEY, "", "지침 · Key")]
-    for src, k, off, color, hatch, lab in bars:
-        ys = [src[m][k][0] if m in src else float("nan") for m in MODELS]
-        es = [src[m][k][1] if m in src else 0.0 for m in MODELS]
-        ax.bar([i + off * w for i in x], ys, w, yerr=es, capsize=1.5, color=color,
-               hatch=hatch, edgecolor="white", linewidth=0.4,
-               label=lab, error_kw={"linewidth": 0.6})
-    ax.axhline(0, color="black", linewidth=0.6)
-    ax.set_xticks(x)
-    ax.set_xticklabels([SHORT[m] for m in MODELS])
-    ax.set_ylabel("표기를 되돌린 정도 (순효과)")
-    ax.set_ylim(-0.06, 1.02)
-    ax.legend(frameon=False, ncol=2, handlelength=1.3, columnspacing=0.9,
+    lo, hi = [], []                       # Key 곡선 16개가 들어갈 띠
+    for src, ls in ((code, "--"), (instr, "-")):
+        for m in MODELS:
+            if m not in src:
+                continue
+            cur = src[m]
+            depth = [L / (cur["layers"][-1] or 1) for L in cur["layers"]]
+            ax.plot(depth, cur["value"], color=COLOR[m], linestyle=ls, linewidth=1.3)
+            lo.append(min(cur["key"])); hi.append(max(cur["key"]))
+    ax.axhspan(min(lo), max(hi), color="0.55", alpha=0.30, linewidth=0, zorder=0)
+    ax.axhline(0, color="black", linewidth=0.5)
+    handles = [plt.Line2D([], [], color=COLOR[m], linewidth=1.5, label=SHORT[m])
+               for m in MODELS]
+    handles += [plt.Line2D([], [], color="0.35", linestyle="-", label="지침"),
+                plt.Line2D([], [], color="0.35", linestyle="--", label="앞선 코드"),
+                plt.Rectangle((0, 0), 1, 1, color="0.55", alpha=0.30,
+                              label="Key 곡선 16개의 전 범위")]
+    ax.legend(handles=handles, frameon=False, ncol=3, fontsize=6.0,
+              handlelength=1.4, columnspacing=0.7,
               loc="lower center", bbox_to_anchor=(0.5, 1.01), borderaxespad=0.0)
-    ax.grid(axis="y", alpha=0.22, linewidth=0.4)
+    ax.set_xlabel("층의 상대 깊이")
+    ax.set_ylabel("표기를 되돌린 정도 (순효과)")
+    ax.set_xlim(0, 1.0)
+    ax.grid(alpha=0.22, linewidth=0.4)
     fig.tight_layout(pad=0.3)
     _save(fig, out, "ko_key_vs_value")
 
