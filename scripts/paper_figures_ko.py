@@ -291,53 +291,8 @@ def _peak(cur):
     return i if cur["value"][i] >= PEAK_MIN else None
 
 
-def _panels(figsize=(3.3, 2.6)):
-    """모델 하나에 판 하나. 선을 한 판에 몰아넣지 않는다."""
-    fig, axes = plt.subplots(2, 2, figsize=figsize, sharex=False)
-    return fig, list(axes.ravel())
-
-
-def _cause_figure(src, out, name, ylab):
-    fig, axes = _panels()
-    for ax, m in zip(axes, ORDER):
-        if m not in src:
-            ax.set_visible(False); continue
-        cur = src[m]
-        L = cur["layers"]
-        ax.plot(L, cur["value"], color=C[m], linewidth=1.1, label="Value")
-        ax.plot(L, cur["key"], color="0.45", linewidth=0.9, linestyle=":", label="Key")
-        lo = [v - c for v, c in zip(cur["value"], cur["value_ci"])]
-        hi = [v + c for v, c in zip(cur["value"], cur["value_ci"])]
-        ax.fill_between(L, lo, hi, color=C[m], alpha=0.18, linewidth=0)
-        i = _peak(cur)
-        ax.axhline(0, color="black", linewidth=0.5)
-        tag = f"봉우리 L{L[i]}" if i is not None else "봉우리 없음"
-        ax.set_title(f"{SHORT[m]}  ({tag})", fontsize=7.5, pad=2.5)
-        ax.tick_params(labelsize=6.5)
-        ax.margins(y=0.18)
-        _tidy(ax)
-    axes[0].legend(fontsize=6.5, loc="upper left", handlelength=1.3,
-                   borderaxespad=0.3)
-    for ax in axes[2:]:
-        ax.set_xlabel("층", fontsize=7.5)
-    for ax in (axes[0], axes[2]):
-        ax.set_ylabel(ylab, fontsize=7)
-    fig.tight_layout(pad=0.3, h_pad=0.8, w_pad=1.0)
-    _save(fig, out, name)
-
-
-def fig_code_cause(out: Path):
-    """앞선 코드의 함수 이름을 바꿨을 때 — 층별 순효과, 모델당 한 판."""
-    _cause_figure(_step3_curves(), out, "ko_cause_code", "순효과")
-
-
-def fig_instr_cause(out: Path):
-    """지침의 표기 지시어를 바꿨을 때 — 층별 순효과, 모델당 한 판."""
-    _cause_figure(_step5_curves(), out, "ko_cause_instr", "순효과")
-
-
-def fig_attention(out: Path):
-    """지침과 앞선 코드가 각각 받는 토큰당 어텐션 — 층별, 모델당 한 판."""
+def _attention_curves():
+    """지침 지시어와 앞선 코드 이름이 층마다 받는 토큰당 어텐션."""
     obs = defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
     for r in load("step4_instr-observe"):
         m = r["condition"]["model"]["family"]
@@ -351,33 +306,73 @@ def fig_attention(out: Path):
                   for sp in ("code_camel", "code_snake")]
             if all(a_ is not None and b_ for a_, b_ in xs):
                 obs[m][int(L)]["code"].append(sum(a_ for a_, _ in xs) / sum(b_ for _, b_ in xs))
-    cur5 = _step5_curves()
-    peak = {m: cur5[m]["layers"][i] for m in cur5
-            if (i := _peak(cur5[m])) is not None}
+    return obs
 
-    fig, axes = _panels()
-    for ax, m in zip(axes, ORDER):
+
+def fig_grid(out: Path):
+    """세 관측을 한 판에 — 세로는 무엇을 쟀나, 가로는 어느 모델인가.
+
+    같은 열이 같은 모델이므로 '많이 보는 층'과 '개입이 먹히는 층'을 위아래로 바로 견준다.
+    """
+    obs = _attention_curves()
+    code, instr = _step3_curves(), _step5_curves()
+
+    fig, axes = plt.subplots(3, len(ORDER), figsize=(7.0, 4.05))
+    for j, m in enumerate(ORDER):
+        pk = _peak(instr[m]) if m in instr else None
+        pk_layer = instr[m]["layers"][pk] if pk is not None else None
+
+        # ① 토큰당 어텐션
+        ax = axes[0][j]
         L = sorted(obs[m])
         ax.plot(L, [st.mean(obs[m][i]["instr"]) for i in L], color=C[m],
-                linewidth=1.1, label="지침")
+                linewidth=1.0, label="지침")
         ax.plot(L, [st.mean(obs[m][i]["code"]) for i in L], color="0.45",
                 linewidth=0.9, linestyle=":", label="앞선 코드")
-        if m in peak:
-            ax.axvline(peak[m], color="black", linewidth=0.7, linestyle="--")
-            tag = f"개입 층 L{peak[m]}"
-        else:
-            tag = "개입이 통하지 않음"
-        ax.set_title(f"{SHORT[m]}  ({tag})", fontsize=7.5, pad=2.5)
-        ax.tick_params(labelsize=6.5)
-        ax.margins(y=0.20)
-        _tidy(ax)
-    axes[0].legend(fontsize=6.5, loc="upper left", handlelength=1.3, borderaxespad=0.3)
-    for ax in axes[2:]:
+        ax.set_title(SHORT[m], fontsize=8, pad=3)
+
+        # ②③ 개입의 순효과
+        for i, src in enumerate((code, instr), start=1):
+            ax = axes[i][j]
+            if m not in src:
+                ax.set_visible(False); continue
+            cur = src[m]
+            LL = cur["layers"]
+            ax.plot(LL, cur["value"], color=C[m], linewidth=1.0, label="Value")
+            ax.plot(LL, cur["key"], color="0.45", linewidth=0.9, linestyle=":", label="Key")
+            lo = [v - c for v, c in zip(cur["value"], cur["value_ci"])]
+            hi = [v + c for v, c in zip(cur["value"], cur["value_ci"])]
+            ax.fill_between(LL, lo, hi, color=C[m], alpha=0.18, linewidth=0)
+            ax.axhline(0, color="black", linewidth=0.5)
+            k = _peak(cur)
+            if k is not None:
+                ax.annotate(f"L{LL[k]}", xy=(LL[k], cur["value"][k]),
+                            xytext=(2, -1), textcoords="offset points",
+                            fontsize=6.2, color=C[m], va="top")
+            else:
+                ax.text(0.5, 0.86, "순효과 없음", transform=ax.transAxes,
+                        fontsize=6.2, color="0.35", ha="center")
+
+        # 지침 개입이 먹히는 층을 세 판에 같은 자리로 긋는다
+        if pk_layer is not None:
+            for i in range(3):
+                axes[i][j].axvline(pk_layer, color="black", linewidth=0.6,
+                                   linestyle="--", alpha=0.55)
+
+    for row in axes:
+        for ax in row:
+            ax.tick_params(labelsize=6.2)
+            ax.margins(y=0.20)
+            _tidy(ax)
+    for ax in axes[2]:
         ax.set_xlabel("층", fontsize=7.5)
-    for ax in (axes[0], axes[2]):
-        ax.set_ylabel("토큰당 어텐션", fontsize=7)
-    fig.tight_layout(pad=0.3, h_pad=0.8, w_pad=1.0)
-    _save(fig, out, "ko_attention")
+    for ax, lab in zip(axes[:, 0],
+                       ("토큰당 어텐션", "앞선 코드 개입\n순효과", "지침 개입\n순효과")):
+        ax.set_ylabel(lab, fontsize=7.2)
+    axes[0][0].legend(fontsize=6.2, loc="upper left", handlelength=1.2, borderaxespad=0.25)
+    axes[1][0].legend(fontsize=6.2, loc="upper left", handlelength=1.2, borderaxespad=0.25)
+    fig.tight_layout(pad=0.3, h_pad=0.7, w_pad=0.9)
+    _save(fig, out, "ko_grid")
 
 
 # ── 그림 3·4. step6 ──────────────────────────────────────────────────────
@@ -457,9 +452,7 @@ def main() -> None:
     if "--out" in sys.argv:
         root = Path(sys.argv[sys.argv.index("--out") + 1])
     jobs = [(fig_cliff, "docs/step1/figures"),
-            (fig_attention, "docs/step4/figures"),
-            (fig_code_cause, "docs/step3/figures"),
-            (fig_instr_cause, "docs/step5/figures"),
+            (fig_grid, "docs/step3/figures"),
             (fig_score_vs_real, "docs/step6/figures")]
     for fn, d in jobs:
         fn(root if root else Path(d))
