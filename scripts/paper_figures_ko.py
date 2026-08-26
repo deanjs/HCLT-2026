@@ -342,40 +342,80 @@ def fig_attention(out: Path):
 
 
 def fig_intervene(out: Path):
-    """개입 — 봉우리 층에서 Value와 Key를 각각 치환했을 때의 순효과."""
-    code, instr = _step3_curves(), _step5_curves()
+    """개입 세 판 — 앞선 코드 · 지침 · 조향 세기.
 
-    fig, axes = plt.subplots(1, 2, figsize=(3.3, 2.1))
-    for ax, (src, title) in zip(axes, ((code, "(가) 앞선 코드를 바꿈"),
-                                       (instr, "(나) 지침을 바꿈"))):
+    (가)(나)는 봉우리 층에서 세 경로를 치환한 순효과, (다)는 조향 세기를 올릴 때
+    같은 개입을 두 자로 채점한 결과다. 셋 다 막대이고 세로 눈금이 모두 비율이라
+    한 판에 놓아도 읽는 법이 달라지지 않는다.
+    """
+    code, instr = _step3_curves(), _step5_curves()
+    TIGHT = {"qwen": "Qwen", "deepseek": "DeepSeek",
+             "stability": "Stable", "llama": "Llama"}
+
+    fig, axes = plt.subplots(1, 3, figsize=(6.9, 2.15))
+
+    for ax, (src, title) in zip(axes[:2], ((code, "(가) 앞선 코드를 바꿈"),
+                                           (instr, "(나) 지침을 바꿈"))):
         x = list(range(len(ORDER)))
         for off, key, face, lab in ((-1, "value", RED, "Value"),
                                     (0, "key_value", "#D9A3A3", "Key+Value"),
                                     (1, "key", GRAY, "Key")):
-            ys, es, cols = [], [], []
+            ys, es = [], []
             for m in ORDER:
-                if m not in src:
-                    ys.append(float("nan")); es.append(0.0); cols.append(GRAY); continue
                 k = max(range(len(src[m]["layers"])), key=lambda i: src[m]["value"][i])
                 ys.append(src[m][key][k]); es.append(src[m][key + "_ci"][k])
-                cols.append(face)
             ax.bar([i + off * 0.27 for i in x], ys, 0.27, yerr=es, capsize=1.2,
-                   color=cols, linewidth=0, label=lab,
+                   color=face, linewidth=0, label=lab,
                    error_kw={"linewidth": 0.6, "ecolor": "black"})
         ax.axhline(0, color="black", linewidth=0.6)
         ax.set_xticks(x)
-        TIGHT = {"qwen": "Qwen", "deepseek": "DeepSeek",
-                 "stability": "Stable", "llama": "Llama"}
         ax.set_xticklabels([f"{TIGHT[m]}\nL{src[m]['layers'][max(range(len(src[m]['layers'])), key=lambda i: src[m]['value'][i])]}"
-                            if m in src else TIGHT[m] for m in ORDER], fontsize=6.0)
+                            for m in ORDER], fontsize=5.8)
         ax.set_title(title, fontsize=7.5, pad=3)
+
+    # (다) 조향 세기에 따른 두 채점 — 같은 개입을 두 자로 잰다
+    ste, gen = load("step6_steer"), load("step6_steer-generate")
+    peak = {}
+    for r in ste:
+        ex = r["metrics"]["extra"]
+        if ex["method"] == "value_add":
+            m = r["condition"]["model"]["family"]
+            peak[m] = max(peak.get(m, -1), ex["layer"])
+    sc, gn = defaultdict(lambda: defaultdict(list)), defaultdict(lambda: defaultdict(list))
+    for r in ste:
+        ex = r["metrics"]["extra"]; m = r["condition"]["model"]["family"]
+        if ex["method"] == "value_add" and ex["layer"] == peak[m]:
+            sc[m][float(ex["strength"])].append(1.0 if ex["recovery"] >= 1.0 else 0.0)
+    for r in gen:
+        ex = r["metrics"]["extra"]
+        if ex["method"] == "value_add":
+            gn[r["condition"]["model"]["family"]][float(ex["strength"])].append(_real(ex))
+
+    S = [1.0, 2.0, 4.0, 8.0]
+    ax = axes[2]
+    x = list(range(len(S)))
+    for off, (src, col, lab) in zip((-0.5, 0.5),
+                                    ((gn, RED, "생성한 이름"), (sc, GRAY, "선호 점수"))):
+        ys = [st.mean([st.mean(src[m][v]) for m in ORDER if src[m].get(v)]) for v in S]
+        ax.bar([i + off * 0.38 for i in x], ys, 0.38, color=col, linewidth=0, label=lab)
+    ax.set_xticks(x)
+    ax.set_xticklabels([f"{v:g}" for v in S], fontsize=6.5)
+    ax.set_xlabel(r"조향 세기 $\alpha$", fontsize=7.5)
+    # 막대가 0에서 올라오므로 판 안 어디든 겹친다. 1.0 위에 자리를 비워 둔다
+    ax.set_ylim(0, 1.32); ax.set_yticks([0, 0.5, 1.0])
+    ax.set_title("(다) 두 채점의 어긋남", fontsize=7.5, pad=3)
+    ax.legend(fontsize=6.2, ncol=2, loc="upper center", handlelength=1.0,
+              borderaxespad=0.25, columnspacing=0.8)
+
+    for ax in axes:
         ax.tick_params(axis="y", labelsize=6.5)
-        ax.margins(y=0.16)
+        ax.margins(y=0.14)
         _tidy(ax)
     axes[0].set_ylabel("순효과", fontsize=7.5)
+    axes[2].set_ylabel("성공으로 세어진 비율", fontsize=7.2)
     axes[0].legend(fontsize=6.0, loc="upper left", handlelength=1.0,
                    borderaxespad=0.25, labelspacing=0.25)
-    fig.tight_layout(pad=0.3, w_pad=1.0)
+    fig.tight_layout(pad=0.3, w_pad=1.1)
     _save(fig, out, "ko_intervene")
 
 
@@ -460,8 +500,7 @@ def main() -> None:
         root = Path(sys.argv[sys.argv.index("--out") + 1])
     jobs = [(fig_cliff, "docs/step1/figures"),
             (fig_attention, "docs/step4/figures"),
-            (fig_intervene, "docs/step3/figures"),
-            (fig_score_vs_real, "docs/step6/figures")]
+            (fig_intervene, "docs/step3/figures")]
     for fn, d in jobs:
         fn(root if root else Path(d))
 
