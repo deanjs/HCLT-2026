@@ -325,10 +325,14 @@ def fig_grid(out: Path):
         # ① 토큰당 어텐션
         ax = axes[0][j]
         L = sorted(obs[m])
-        ax.plot(L, [st.mean(obs[m][i]["instr"]) for i in L], color=C[m],
-                linewidth=1.0, label="지침")
-        ax.plot(L, [st.mean(obs[m][i]["code"]) for i in L], color="0.45",
-                linewidth=0.9, linestyle=":", label="앞선 코드")
+        # 점선은 아래 두 행에서 Key를 뜻한다. 여기서 또 쓰면 같은 모양이 두 뜻이 된다.
+        # 첫째 행은 둘 다 실선으로 두고 색과 굵기로만 가른다.
+        ins = [st.mean(obs[m][i]["instr"]) for i in L]
+        cod = [st.mean(obs[m][i]["code"]) for i in L]
+        ax.fill_between(L, cod, ins, where=[a_ >= b_ for a_, b_ in zip(ins, cod)],
+                        color=C[m], alpha=0.13, linewidth=0, interpolate=True)
+        ax.plot(L, cod, color="0.62", linewidth=1.0, label="앞선 코드")
+        ax.plot(L, ins, color=C[m], linewidth=1.2, label="지침")
         ax.set_title(SHORT[m], fontsize=8, pad=3)
 
         # ②③ 개입의 순효과
@@ -375,7 +379,9 @@ def fig_grid(out: Path):
     for ax, lab in zip(axes[:, 0],
                        ("토큰당 어텐션", "앞선 코드 개입\n순효과", "지침 개입\n순효과")):
         ax.set_ylabel(lab, fontsize=7.2)
-    axes[0][0].legend(fontsize=6.2, loc="upper left", handlelength=1.2, borderaxespad=0.25)
+    h, l = axes[0][0].get_legend_handles_labels()
+    axes[0][0].legend(h[::-1], l[::-1], fontsize=6.2, loc="upper left",
+                      handlelength=1.2, borderaxespad=0.25)
     for i in (1, 2):
         axes[i][0].legend(fontsize=6.2, loc="upper left", handlelength=1.4,
                           borderaxespad=0.25)
