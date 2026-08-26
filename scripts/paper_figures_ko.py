@@ -341,6 +341,9 @@ def fig_attention(out: Path):
     _save(fig, out, "ko_attention")
 
 
+ZERO_PAD = 0.10      # 0선을 세 판에서 같은 높이에 두기 위한 아래 여백 비율
+
+
 def fig_intervene(out: Path):
     """개입 세 판 — 앞선 코드 · 지침 · 조향 세기.
 
@@ -368,6 +371,10 @@ def fig_intervene(out: Path):
                    color=face, linewidth=0, label=lab,
                    error_kw={"linewidth": 0.6, "ecolor": "black"})
         ax.axhline(0, color="black", linewidth=0.6)
+        # 0선이 세 판에서 같은 높이에 오도록 아래 여백을 위쪽 눈금에 비례시킨다
+        top = max(src[m]["value"][max(range(len(src[m]["layers"])),
+                                      key=lambda i: src[m]["value"][i])] for m in ORDER) * 1.18
+        ax.set_ylim(-ZERO_PAD * top, top)
         ax.set_xticks(x)
         ax.set_xticklabels([f"{TIGHT[m]}\nL{src[m]['layers'][max(range(len(src[m]['layers'])), key=lambda i: src[m]['value'][i])]}"
                             for m in ORDER], fontsize=5.8)
@@ -395,24 +402,24 @@ def fig_intervene(out: Path):
     ax = axes[2]
     x = list(range(len(S)))
     for off, (src, col, lab) in zip((-0.5, 0.5),
-                                    ((gn, RED, "생성한 이름"), (sc, GRAY, "선호 점수"))):
+                                    ((gn, RED, "실제 생성한 이름"), (sc, GRAY, "선호 점수 기준"))):
         ys = [st.mean([st.mean(src[m][v]) for m in ORDER if src[m].get(v)]) for v in S]
         ax.bar([i + off * 0.38 for i in x], ys, 0.38, color=col, linewidth=0, label=lab)
     ax.set_xticks(x)
     ax.set_xticklabels([f"{v:g}" for v in S], fontsize=6.5)
     ax.set_xlabel(r"조향 세기 $\alpha$", fontsize=7.5)
     # 막대가 0에서 올라오므로 판 안 어디든 겹친다. 1.0 위에 자리를 비워 둔다
-    ax.set_ylim(0, 1.32); ax.set_yticks([0, 0.5, 1.0])
+    ax.set_ylim(-ZERO_PAD * 1.32, 1.32); ax.set_yticks([0, 0.5, 1.0])
+    ax.axhline(0, color="black", linewidth=0.6)
     ax.set_title("(다) 두 채점의 어긋남", fontsize=7.5, pad=3)
     ax.legend(fontsize=6.2, ncol=2, loc="upper center", handlelength=1.0,
               borderaxespad=0.25, columnspacing=0.8)
 
     for ax in axes:
         ax.tick_params(axis="y", labelsize=6.5)
-        ax.margins(y=0.14)
         _tidy(ax)
     axes[0].set_ylabel("순효과", fontsize=7.5)
-    axes[2].set_ylabel("성공으로 세어진 비율", fontsize=7.2)
+    axes[2].set_ylabel("성공률", fontsize=7.5)
     axes[0].legend(fontsize=6.0, loc="upper left", handlelength=1.0,
                    borderaxespad=0.25, labelspacing=0.25)
     fig.tight_layout(pad=0.3, w_pad=1.1)
