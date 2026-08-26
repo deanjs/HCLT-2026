@@ -248,7 +248,10 @@ def fig_method(out: Path):
 
 
 def fig_score_vs_real(out: Path):
-    """같은 개입을 두 자로 잰다 — 점수로 재면 성공, 이름으로 재면 실패."""
+    """같은 개입을 두 자로 잰다 — 세기를 올릴수록 두 자가 갈라진다.
+
+    왼쪽은 세기 1~2에서 봉우리를 만들고 8에서 무너지는데, 오른쪽은 그동안 계속 오른다.
+    """
     ste = load("step6_steer")
     peak = {}
     for r in ste:
@@ -256,12 +259,14 @@ def fig_score_vs_real(out: Path):
         if ex["method"] == "value_add":
             m = r["condition"]["model"]["family"]
             peak[m] = max(peak.get(m, -1), ex["layer"])
-    sc = defaultdict(lambda: defaultdict(list))
+    rc = defaultdict(lambda: defaultdict(list))
     for r in ste:
         ex = r["metrics"]["extra"]
         m = r["condition"]["model"]["family"]
         if ex["method"] == "value_add" and ex["layer"] == peak[m]:
-            sc[m][float(ex["strength"])].append(1.0 if ex["recovery"] >= 1.0 else 0.0)
+            rc[m][float(ex["strength"])].append(ex["recovery"])
+    for m in MODELS:
+        rc[m][0.0] = [0.0]                    # 개입하지 않으면 되돌릴 것도 없다
     gn = defaultdict(lambda: defaultdict(list))
     for r in load("step6_steer-generate"):
         ex = r["metrics"]["extra"]
@@ -269,26 +274,30 @@ def fig_score_vs_real(out: Path):
             gn[r["condition"]["model"]["family"]][float(ex["strength"])].append(_real(ex))
 
     S = [0.0, 1.0, 2.0, 4.0, 8.0]
-    fig, ax = plt.subplots(figsize=(3.3, 2.4))
+    COLOR = {"qwen": "#2e6fbf", "deepseek": "#e08214",
+             "llama": "#2e8b57", "stability": "#c0392b"}
+    MARK = {"qwen": "o", "deepseek": "s", "llama": "^", "stability": "D"}
+
+    fig, (a1, a2) = plt.subplots(1, 2, figsize=(6.6, 2.5))
     x = list(range(len(S)))
-    for src, color, ls, lab in ((sc, "#8fa9c6", ":", "선호 점수로 채점"),
-                                (gn, C_VAL, "-", "생성한 이름으로 채점")):
-        per = {m: [st.mean(src[m][s]) if src[m].get(s) else 0.0 for s in S] for m in MODELS}
-        for m in MODELS:                                # 모델 하나하나를 옅게 깔고
-            ax.plot(x, per[m], color=color, alpha=0.30, linewidth=0.7,
-                    linestyle=ls, zorder=2)
-        ax.plot(x, [st.mean([per[m][i] for m in MODELS]) for i in x],   # 평균을 굵게
-                color=color, linewidth=2.1, linestyle=ls, marker="o", ms=4.2,
-                mfc="white", mew=1.7, label=lab, zorder=3)
-    ax.set_xticks(x)
-    ax.set_xticklabels([f"{v:g}" for v in S])
-    ax.set_xlabel("값을 미는 세기  (0 = 개입하지 않음)")
-    ax.set_ylabel("성공으로 세어진 비율")
-    ax.set_ylim(-0.04, 1.12)
-    ax.legend(frameon=False, ncol=2, handlelength=1.6, columnspacing=1.0,
-              loc="lower center", bbox_to_anchor=(0.5, 1.01), borderaxespad=0.0)
-    ax.grid(alpha=0.22, linewidth=0.4)
-    fig.tight_layout(pad=0.3)
+    for m in MODELS:
+        a1.plot(x, [st.mean(gn[m][v]) if gn[m].get(v) else 0.0 for v in S],
+                color=COLOR[m], marker=MARK[m], ms=3.6, label=SHORT[m])
+        a2.plot(x, [st.mean(rc[m][v]) if rc[m].get(v) else 0.0 for v in S],
+                color=COLOR[m], marker=MARK[m], ms=3.6)
+    a1.set_ylabel("실제 준수율"); a1.set_ylim(-0.05, 1.10)
+    a1.set_title("생성한 이름으로 재면", fontsize=8.5, pad=4)
+    a2.set_ylabel("선호 점수 되돌림률"); a2.set_ylim(-0.15, 4.8)
+    a2.set_title("선호 점수로 재면", fontsize=8.5, pad=4)
+    a2.axhline(1.0, color="0.45", linestyle=":", linewidth=0.9)  # 1 = 완전히 되돌아온 선(캡션에서 말한다)
+    for ax in (a1, a2):
+        ax.set_xticks(x)
+        ax.set_xticklabels([f"{v:g}" for v in S])
+        ax.set_xlabel("값을 미는 세기  (0 = 개입하지 않음)", fontsize=8)
+        ax.grid(alpha=0.22, linewidth=0.4)
+    fig.legend(frameon=False, ncol=4, handlelength=1.7, columnspacing=1.6,
+               loc="lower center", bbox_to_anchor=(0.5, 0.99))
+    fig.tight_layout(pad=0.4)
     _save(fig, out, "ko_score_vs_real")
 
 
