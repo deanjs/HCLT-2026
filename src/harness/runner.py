@@ -15,6 +15,7 @@ from dataclasses import dataclass, replace
 from typing import Callable, Optional
 
 from .conditions import Condition, InterventionKind, Notation
+from .intervention import UNDECIDABLE_GAP, effect_size, is_undecidable
 from .metrics import Metrics
 from .model import ModelHandle
 import re
@@ -22,9 +23,12 @@ import re
 from .naming import classify_name, first_function_name
 from .prompt import (
     _STYLE,
+    _lang,
     build_instruction_text,
     build_preceding_code,
     first_user_message,
+    instruction_notation_spans,
+    NEUTRAL_INSTRUCTION_WORD,
     next_user_message,
     notation_word,
     preceding_specs,
@@ -75,6 +79,7 @@ def run(
     mode: str = "generate",
     generate_fn: Optional[GenerateFn] = None,
     max_new_tokens: int = 256,
+    max_turns: Optional[int] = None,
 ) -> RunOutput:
     """조건 하나를 실행한다.
 
@@ -93,14 +98,26 @@ def run(
     if mode == "vcosine":
         # 관측 측(step 1): 같은 이름 camel/snake v의 층별 코사인 궤적
         return _run_cosine_sweep(condition, handle)
+    if mode == "steer_generate":
+        # 처방을 건 채로 **실제 이름을 생성**해 본다(점수 회복이 진짜인지 눈으로 확인).
+        return _run_steer_generate(condition, handle, max_new_tokens)
+    if mode == "steer" or condition.intervention.kind in (InterventionKind.VALUE_ADD,
+                                                          InterventionKind.ATTENTION_AMPLIFY):
+        # 처방(step6). 개입 종류로도 오지만, **무개입 하한선**은 mode='steer'로 부른다
+        # (같은 교사강제 점수로 재야 비교가 성립한다 — 생성 경로로 새면 안 된다).
+        return _run_steer(condition, handle)
+    if mode == "kv_diagnose":
+        # 진단: 평균 덮어쓰기가 Key를 Value보다 불리하게 망가뜨리는가(점수 안 매김, 가볍다)
+        return _run_kv_diagnostics(condition, handle)
     if mode != "generate":
         raise ValueError(
-            f"알 수 없는 mode: {mode!r} (generate|observe|intervene_generate|vcosine)"
+            f"알 수 없는 mode: {mode!r} "
+            "(generate|observe|intervene_generate|vcosine|kv_diagnose|steer|steer_generate)"
         )
     if condition.intervention.kind is not InterventionKind.NONE:
         # 개입 경로(step C): KV 치환으로 준수 선호도 회복 측정
         return _run_intervention(condition, handle)
-    return _run_generation(condition, handle, generate_fn, max_new_tokens)
+    return _run_generation(condition, handle, generate_fn, max_new_tokens, max_turns)
 
 
 def _run_intervention(condition: Condition, handle: Optional[ModelHandle]) -> RunOutput:
@@ -113,10 +130,19 @@ def _run_intervention(condition: Condition, handle: Optional[ModelHandle]) -> Ru
         raise ValueError("개입에는 handle이 필요하다 (모델 내부 접근)")
 
     iv = condition.intervention
-    if iv.is_sweep:
-        # 전 층 × K/V 분해 스윕(step 1). 단일 층(step C)과 설정을 공유한다.
+    if iv.is_sweep or iv.kinds:
+        # 여러 방식(key/value/key_value)을 한 번에 재거나 전 층을 훑는 경로.
+        # 프롬프트를 한 번만 forward하고 캐시를 재사용하므로 방식이 늘어도 비용이 적다.
         return _run_intervention_sweep(condition, handle)
-    layer = list(iv.layers)[0]
+    layers = list(iv.layers)
+    if len(layers) != 1:
+        # 조용한 오작동 금지: 예전에는 목록을 줘도 **첫 층만** 돌고 나머지는 조용히 버려졌다.
+        # 파일명에는 그 첫 층만 남아 "여러 층을 쟀다"고 오해하기 쉽다.
+        raise ValueError(
+            f"단일 층 개입에는 층을 하나만 준다 (받음: {layers}). "
+            "여러 층을 재려면 층마다 조건을 따로 만들거나 layers='sweep'을 쓴다."
+        )
+    layer = layers[0]
     instr_target = iv.target == "instruction"
     setup = _preference_setup_instruction(condition) if instr_target else _preference_setup(condition)
     span_kind = "literal" if instr_target else "def_name"
@@ -139,6 +165,11 @@ def _run_intervention(condition: Condition, handle: Optional[ModelHandle]) -> Ru
             "target": setup["target"].value,
             "S_clean": out["S_clean"],
             "S_base": out["S_base"],
+            # 영향력(회복률 분모)과 판정 가능 여부를 결과에 남긴다 — 집계 단계에서
+            # 어떤 조건이 왜 빠졌는지 파일만 보고 알 수 있어야 한다(CLAUDE.md §4).
+            "gap": effect_size(out["S_clean"], out["S_base"]),
+            "undecidable": is_undecidable(out["S_clean"], out["S_base"]),
+            "undecidable_gap_min": UNDECIDABLE_GAP,
             "S_int": out["S_int"],
             "recovery": out["recovery"],
             "layer": out["layer"],
@@ -150,6 +181,240 @@ def _run_intervention(condition: Condition, handle: Optional[ModelHandle]) -> Ru
         },
     )
     return RunOutput(condition=condition, metrics=metrics)
+
+
+def _run_kv_diagnostics(condition: Condition, handle: Optional[ModelHandle]) -> RunOutput:
+    """진단 경로 — 평균 덮어쓰기가 Key를 Value보다 불리하게 만드는지 층별로 잰다.
+
+    개입 경로(`_run_intervention_sweep`)와 **완전히 같은 입력**을 쓴다. 다른 점은 점수를
+    매기지 않고 공여 값의 성질만 본다는 것뿐이라, 전 층 스윕보다 훨씬 가볍다.
+    개입 대상이 'instruction'이면 지침 지시어를, 아니면 선행 코드 이름을 본다.
+    """
+    if handle is None:
+        raise ValueError("진단에는 handle이 필요하다 (모델 내부 접근)")
+
+    instr_target = condition.intervention.target == "instruction"
+    setup = _preference_setup_instruction(condition) if instr_target else _preference_setup(condition)
+    span_kind = "literal" if instr_target else "def_name"
+
+    out = handle.kv_substitution_diagnostics(
+        setup["viol_messages"], setup["comp_messages"],
+        viol_names=setup["viol_names"], donor_names=setup["donor_names"],
+        candidate_compliant=setup["candidate_compliant"],
+        candidate_violation=setup["candidate_violation"],
+        donor_messages=setup["donor_messages"],
+        token_unit=condition.token_unit, span_kind=span_kind,
+    )
+
+    metrics = Metrics(
+        per_layer={int(L): v for L, v in out["per_layer"].items()},
+        extra={
+            "mode": "kv_diagnose",
+            "intervention_target": condition.intervention.target,
+            "donor": setup["donor_kind"],
+            "target": setup["target"].value,
+            "S_clean": out["S_clean"],
+            "S_base": out["S_base"],
+            "gap": effect_size(out["S_clean"], out["S_base"]),
+            "undecidable": is_undecidable(out["S_clean"], out["S_base"]),
+            "position_offsets": out["position_offsets"],
+            "position_offset_abs_mean": out["position_offset_abs_mean"],
+            "donor_piece_counts": out["donor_piece_counts"],
+            "target_piece_counts": out["target_piece_counts"],
+            "n_substituted_tokens": out["n_substituted_tokens"],
+            "skipped_names": out["skipped_names"],
+            "viol_names": setup["viol_names"],
+            "donor_names": setup["donor_names"],
+        },
+    )
+    return RunOutput(condition=condition, metrics=metrics)
+
+
+# 모델·층·출처가 같으면 조향 방향은 한 번만 만든다(무거운 추출을 조건마다 반복하지 않도록).
+_STEER_VEC: dict = {}
+
+
+def _steer_samples(condition: Condition, n_blocks: int = 8) -> list:
+    """조향 방향 추출용 표본 — 여러 묶음의 선행을 전부 camel / 전부 snake로 렌더한 프롬프트쌍."""
+    from dataclasses import replace as _replace
+    system = build_instruction_text(condition)
+    samples = []
+    for b in range(n_blocks):
+        c_b = _replace(condition, preceding=_replace(condition.preceding, pool_block=b))
+        specs = preceding_specs(c_b)
+        cam = render_preceding([(sp, Notation.CAMEL) for sp, _ in specs])
+        sna = render_preceding([(sp, Notation.SNAKE) for sp, _ in specs])
+        samples.append({
+            "camel_messages": [{"role": "system", "content": system},
+                               {"role": "user", "content": user_message_with_preceding(c_b, cam)}],
+            "snake_messages": [{"role": "system", "content": system},
+                               {"role": "user", "content": user_message_with_preceding(c_b, sna)}],
+            "camel_names": [sp.name(Notation.CAMEL) for sp, _ in specs],
+            "snake_names": [sp.name(Notation.SNAKE) for sp, _ in specs],
+        })
+    return samples
+
+
+def _spotlight_span_positions(handle, messages, condition: Condition,
+                              forced_prefix: str = "def ") -> list[int]:
+    """Spotlight가 밀어 올릴 토큰 자리.
+
+    span="rule_word"   : 규칙문 지시어만 — step5에서 값을 바꾼 자리와 **정확히 같다**
+    span="instruction" : 지침 문장 전체 — 원 논문 정의
+
+    못 찾으면 예외. 빈 스팬으로 돌리면 "개입했는데 효과 없음"으로 조용히 남는다.
+    """
+    from .attention_probe import find_char_spans, locate_token_spans
+    from .model import _locate_target_tokens
+
+    tok = handle.tokenizer
+    text = tok.apply_chat_template(messages, tokenize=False,
+                                   add_generation_prompt=True) + forced_prefix
+    enc = tok(text, return_tensors="pt", return_offsets_mapping=True, add_special_tokens=False)
+    offsets = [tuple(o) for o in enc["offset_mapping"][0].tolist()]
+
+    span = condition.intervention.span
+    if span == "rule_word":
+        word = notation_word(condition.instruction.token_notation)
+        pos = [p for lst in _locate_target_tokens(text, offsets, [word], "literal") for p in lst]
+        what = f"규칙문 지시어 {word!r}"
+    else:
+        instruction_text = build_instruction_text(condition)
+        char_spans = {"instruction": find_char_spans(text, [instruction_text])}
+        pos = list(locate_token_spans(offsets, char_spans)["instruction"])
+        what = "지침 문장 전체"
+    if not pos:
+        raise ValueError(
+            f"Spotlight 스팬을 프롬프트에서 찾지 못했다 ({what}). "
+            "chat 템플릿이 문장을 변형했을 수 있다."
+        )
+    return pos
+
+
+def _run_steer(condition: Condition, handle: Optional[ModelHandle]) -> RunOutput:
+    """처방 경로(step6) — 값 조향(CAA식) / Spotlight 어텐션 조향으로 준수 회복을 잰다.
+
+    출발점은 **절벽 조건**(지침은 camel, 선행은 전부 위반). 교사강제 준수 선호 점수의
+    회복률 = (S_개입 − S_기준)/(S_깨끗 − S_기준).
+    """
+    if handle is None:
+        raise ValueError("처방(step6)에는 handle이 필요하다 (모델 내부 접근)")
+    from . import steer as steer_mod
+
+    iv = condition.intervention
+    setup = _preference_setup(condition)       # 코드 타깃 절벽 — viol/comp/후보를 재사용
+    common = dict(cand_comp=setup["candidate_compliant"], cand_viol=setup["candidate_violation"])
+    detail: dict = {}
+
+    if iv.kind is InterventionKind.VALUE_ADD:
+        layers = list(iv.layers)
+        if len(layers) != 1:
+            # B에서 겪은 실수 재발 방지 — 목록을 주면 조용히 첫 층만 쓰던 문제.
+            raise ValueError(
+                f"값 조향에는 층을 하나만 준다 (받음: {layers}). 층마다 조건을 따로 만든다."
+            )
+        layer = layers[0]
+        # 방향을 뽑는 층과 주입하는 층은 다를 수 있다.
+        #   같으면  → "이 층에 밀면 되나"
+        #   다르면  → "방향 자체가 층 특이적인가"(맞는 층 방향을 엉뚱한 층에 주입)
+        src_layer = iv.steer_layer if iv.steer_layer is not None else layer
+        key = (condition.model.name, src_layer, iv.steer_source)
+        if key not in _STEER_VEC:
+            _STEER_VEC[key] = steer_mod.build_steer_vector(handle, _steer_samples(condition), src_layer)
+        vec, vec_meta = _STEER_VEC[key]
+        detail["steer_vector"] = vec_meta       # 무엇으로 만든 방향인지 결과에 남긴다
+        detail["steer_from_layer"] = src_layer
+        res = steer_mod.steer_preference(handle, setup["viol_messages"], setup["comp_messages"],
+                                         kind="value_add", layer=layer,
+                                         strength=iv.strength, steer_vec=vec, **common)
+    elif iv.kind is InterventionKind.ATTENTION_AMPLIFY:
+        pos = _spotlight_span_positions(handle, setup["viol_messages"], condition)
+        res = steer_mod.steer_preference(handle, setup["viol_messages"], setup["comp_messages"],
+                                         kind="spotlight", psi_target=iv.amplify,
+                                         span_positions=pos, **common)
+    elif iv.kind is InterventionKind.NONE:
+        res = steer_mod.steer_preference(handle, setup["viol_messages"], setup["comp_messages"],
+                                         kind="none", **common)
+    else:
+        raise ValueError(f"step6가 지원하지 않는 개입: {iv.kind.value}")
+
+    extra = {
+        "mode": "steer",
+        "method": iv.kind.value,
+        "span": iv.span,
+        "strength": iv.strength,
+        "psi_target": iv.amplify,
+        "steer_source": iv.steer_source,
+        "steer_layer": iv.steer_layer,
+        "n_compliant": condition.preceding.n_compliant,
+        "target": condition.instruction.target_notation.value,
+        "tag": condition.tag,
+    }
+    extra.update(res)
+    extra.update(detail)
+    return RunOutput(condition=condition,
+                     metrics=Metrics(compliance_preference=res["S_int"], extra=extra))
+
+
+def _run_steer_generate(condition: Condition, handle: Optional[ModelHandle],
+                        max_new_tokens: int) -> RunOutput:
+    """처방을 건 채로 실제 이름을 생성한다 — 점수만 오르고 **이름이 깨지지 않았는지** 확인.
+
+    선호 점수는 위가 막혀 있지 않아 세게 밀수록 계속 오른다. 그래서 점수만으로는
+    "되살아났다"고 말할 수 없다. 실제로 나온 이름의 표기와 건전성을 함께 본다.
+    """
+    if handle is None:
+        raise ValueError("생성 검증에는 handle이 필요하다")
+    from . import steer as steer_mod
+
+    iv = condition.intervention
+    setup = _preference_setup(condition)
+    kwargs: dict = {}
+    if iv.kind is InterventionKind.VALUE_ADD:
+        layers = list(iv.layers)
+        if len(layers) != 1:
+            raise ValueError(f"값 조향에는 층을 하나만 준다 (받음: {layers})")
+        layer = layers[0]
+        src_layer = iv.steer_layer if iv.steer_layer is not None else layer
+        key = (condition.model.name, src_layer, iv.steer_source)
+        if key not in _STEER_VEC:
+            _STEER_VEC[key] = steer_mod.build_steer_vector(handle, _steer_samples(condition), src_layer)
+        kwargs = dict(kind="value_add", layer=layer, strength=iv.strength,
+                      steer_vec=_STEER_VEC[key][0])
+    elif iv.kind is InterventionKind.ATTENTION_AMPLIFY:
+        kwargs = dict(kind="spotlight", psi_target=iv.amplify,
+                      span_positions=_spotlight_span_positions(handle, setup["viol_messages"], condition))
+    elif iv.kind is InterventionKind.NONE:
+        kwargs = dict(kind="none")
+    else:
+        raise ValueError(f"생성 검증이 지원하지 않는 개입: {iv.kind.value}")
+
+    out = steer_mod.steer_generate(handle, setup["viol_messages"],
+                                   max_new_tokens=max_new_tokens, **kwargs)
+    lang = condition.preceding.repo_lang or condition.preceding.lang or "python"
+    name = first_function_name(out["text"], lang)
+    health = steer_mod.name_health(name)
+    target = condition.instruction.target_notation.value
+    notation = classify_name(name) if name else "other"
+
+    return RunOutput(condition=condition, metrics=Metrics(
+        compliance_rate=1.0 if notation == target else 0.0,
+        extra={
+            "mode": "steer_generate",
+            "method": iv.kind.value,
+            "layer": (list(iv.layers)[0] if iv.kind is InterventionKind.VALUE_ADD else None),
+            "strength": iv.strength,
+            "psi_target": iv.amplify,
+            "span": iv.span,
+            "target": target,
+            "generated_text": out["text"],
+            "name": name,
+            "notation": notation,
+            "compliant": notation == target,
+            "name_ok": health["ok"],          # 이름이 멀쩡한가
+            "name_reason": health["reason"],  # 안 멀쩡하면 왜
+            "name_length": health.get("length"),
+        }))
 
 
 def _preference_setup(condition: Condition) -> dict:
@@ -204,7 +469,7 @@ def _preference_setup(condition: Condition) -> dict:
 
 
 def _preference_setup_instruction(condition: Condition) -> dict:
-    """step4 개입 입력 — 치환 대상이 **지침 지시어 토큰**, 공여가 **반대 지침**(RQ3 인과).
+    """step5 개입 입력 — 치환 대상이 **지침 지시어 토큰**, 공여가 **반대 지침**(RQ3 인과).
 
     stepC(_preference_setup)와 같은 반사실 KV 치환 구조를 쓰되(CLAUDE.md §3), 딱 두 곳만
     바꾼다:
@@ -234,20 +499,45 @@ def _preference_setup_instruction(condition: Condition) -> dict:
 
     # 치환 대상 = 각 지침 rule 문장의 지시어 단어(literal 첫 등장).
     viol_names = [notation_word(condition.instruction.token_notation)]  # "camelCase"
-    donor_names = [notation_word(opp_instruction.token_notation)]       # "snake_case"
+
+    # 공여(무엇을 덮어넣을 것인가) — 통제 조건을 여기서 표현한다.
+    #   opposite       : 반대 지침의 지시어      → 처치. 전이가 커야 정상
+    #   self           : **같은 지침의 같은 지시어** → 자기 통제.
+    #                    정보는 하나도 새로 들어가지 않고 "덮어쓰는 행위"만 남는다. 전이 ≈ 0이어야 정상
+    #   unrelated_word : 같은 지침의 무관한 단어("project") → 음성 통제.
+    #                    표기와 무관한 내용을 덮는다. 전이 ≈ 0이어야 정상
+    # step3(코드)에서 이 '덮어쓰기 자체의 교란'이 회복률의 절반 이상을 차지했다.
+    # 통제 없이 잰 전이율은 그 교란을 포함한 **상한**이다.
+    donor_kind = condition.intervention.donor or "opposite"
+    if donor_kind == "opposite":
+        donor_messages = None                          # donor_cache = comp_cache(반대 지침)
+        donor_names = [notation_word(opp_instruction.token_notation)]
+    elif donor_kind == "self":
+        donor_messages = msgs(base_system)             # 같은 지침을 한 번 더 forward
+        donor_names = [notation_word(condition.instruction.token_notation)]
+    elif donor_kind == "unrelated_word":
+        donor_messages = msgs(base_system)
+        donor_names = [NEUTRAL_INSTRUCTION_WORD]
+    else:
+        raise ValueError(
+            f"지침 개입의 공여 종류가 올바르지 않다: {donor_kind!r} "
+            "(opposite | self | unrelated_word)"
+        )
 
     gt = GENERATION_TASKS[0]
     cand_compliant, cand_violation = gt.name(target), gt.name(violation)
 
     return {
         "viol_messages": msgs(base_system),   # base = 조건 지침
-        "comp_messages": msgs(opp_system),    # 천장 기준 = 반대 지침 (donor로도 재사용)
+        "comp_messages": msgs(opp_system),    # 천장 기준 = 반대 지침 (opposite면 donor로도 재사용)
         "viol_names": viol_names,
         "donor_names": donor_names,
         "candidate_compliant": cand_compliant,
         "candidate_violation": cand_violation,
-        "donor_messages": None,               # donor_cache = comp_cache(반대 지침)
-        "donor_kind": "opposite_instruction",
+        "donor_messages": donor_messages,
+        "donor_kind": (
+            "opposite_instruction" if donor_kind == "opposite" else f"control_{donor_kind}"
+        ),
         "target": target,
     }
 
@@ -258,7 +548,7 @@ def _run_intervention_sweep(condition: Condition, handle: Optional[ModelHandle])
     산출: 층별 회복률 곡선 3개(kind별) × donor, 피크 층, K/V 경로별 기여도. 관측 측
     코사인 궤적(mode='vcosine')과 층을 맞춰 보면 축 B(Value 방향) 성립을 교차검증한다.
     per_layer에는 kind·지표를 평평한 키("key__recovery" 등)로 담는다(observe와 동일 관습).
-    개입 타깃이 'instruction'이면 코드 이름 대신 지침 지시어 토큰을 치환한다(step4).
+    개입 타깃이 'instruction'이면 코드 이름 대신 지침 지시어 토큰을 치환한다(step5).
     """
     if handle is None:
         raise ValueError("개입에는 handle이 필요하다 (모델 내부 접근)")
@@ -271,7 +561,9 @@ def _run_intervention_sweep(condition: Condition, handle: Optional[ModelHandle])
         viol_names=setup["viol_names"], donor_names=setup["donor_names"],
         candidate_compliant=setup["candidate_compliant"],
         candidate_violation=setup["candidate_violation"],
-        layers=None, kinds=("key", "value", "key_value"),
+        # 조건이 실행을 규정한다 — 층도 방식도 하드코딩하지 않는다(CLAUDE.md §7).
+        layers=(None if condition.intervention.is_sweep else list(condition.intervention.layers)),
+        kinds=tuple(condition.intervention.kinds or ("key", "value", "key_value")),
         donor_messages=setup["donor_messages"],
         token_unit=condition.token_unit, span_kind=span_kind,
     )
@@ -295,6 +587,9 @@ def _run_intervention_sweep(condition: Condition, handle: Optional[ModelHandle])
             "target": setup["target"].value,
             "S_clean": out["S_clean"],
             "S_base": out["S_base"],
+            "gap": effect_size(out["S_clean"], out["S_base"]),
+            "undecidable": is_undecidable(out["S_clean"], out["S_base"]),
+            "undecidable_gap_min": UNDECIDABLE_GAP,
             "kinds": out["kinds"],
             "n_substituted_tokens": out["n_substituted_tokens"],
             "skipped_names": out["skipped_names"],
@@ -370,6 +665,13 @@ def _run_intervention_generate(
     iv = condition.intervention
     if iv.is_sweep:
         raise ValueError("step C는 단일 층. 전 층 스윕은 step 1")
+    if iv.target != "code":
+        # 조용한 오작동 금지: 이 경로는 iv.target을 읽지 않고 늘 선행 코드 이름을 치환한다.
+        # target="instruction"으로 부르면 파일명만 '지침 타깃'이고 실제로는 코드를 바꾼 결과가 남는다.
+        raise NotImplementedError(
+            "생성 기반 개입은 아직 target='code'만 지원한다 "
+            f"(받음: {iv.target!r}). 지침 지시어 치환은 선호 점수 경로를 쓴다."
+        )
     layer = list(iv.layers)[0]
     target = condition.instruction.target_notation
     violation = condition.instruction.violation_notation
@@ -461,12 +763,14 @@ def _run_observation(condition: Condition, handle: Optional[ModelHandle]) -> Run
     ]
 
     # 지침 안의 표기 지시어 토큰을 통째 지침과 별도로 관측한다("camelCase 써라"의 그 단어).
-    # target = 지침이 요구하는 표기(지시어), viol = 반대 표기.
+    # target/viol = 초판 방식(규칙문+후보열거 합침, 요구어는 2회 등장해 부풀려짐 → 참고용).
+    # instr_rule_word / instr_cand_* = 규칙문(진짜 지시)과 후보열거(대칭 나열)를 분리한 공정 비교용.
     ins = condition.instruction
-    notation_spans = {
+    notation_spans: dict[str, object] = {
         "instr_target_word": _STYLE[ins.target_notation],
         "instr_viol_word": _STYLE[ins.violation_notation],
     }
+    notation_spans.update(instruction_notation_spans(condition))
 
     obs = handle.observe_generation_query(
         messages, groups=groups, instruction_text=instruction_text,
@@ -507,8 +811,13 @@ def _run_generation(
     handle: Optional[ModelHandle],
     generate_fn: Optional[GenerateFn],
     max_new_tokens: int,
+    max_turns: Optional[int] = None,
 ) -> RunOutput:
-    """생성 경로 — 선행 12 + 생성 3을 순차 생성하고 표기를 측정한다(step A)."""
+    """생성 경로 — 선행 12 + 순차 생성을 하고 표기를 측정한다(step A / step1).
+
+    max_turns: 생성 턴 수 상한. None=과제 전부(자기증폭까지). step1 절벽은 1턴이면
+    충분(첫 함수 준수율만)해 GPU를 아낀다. 첫 턴은 언제나 준수율(절벽)의 근거다.
+    """
     if generate_fn is None:
         if handle is None:
             raise ValueError("생성에는 handle 또는 generate_fn 중 하나가 필요하다")
@@ -517,8 +826,8 @@ def _run_generation(
         )
 
     # system(지침) + 순차 3턴. 모델의 이전 답이 히스토리에 쌓여 자기증폭이 누적된다.
-    # 코드 언어(합성=python, 실코드=repo_lang) → 이름 추출기 선택
-    lang = condition.preceding.repo_lang or "python"
+    # 코드 언어(합성=preceding.lang, 실코드=repo_lang) → 이름 추출기 선택
+    lang = _lang(condition)
 
     messages: list[dict[str, str]] = [
         {"role": "system", "content": build_instruction_text(condition)}
@@ -526,7 +835,8 @@ def _run_generation(
     notations: list[str] = []
     names: list[Optional[str]] = []
     texts: list[str] = []
-    for turn in range(len(GENERATION_TASKS)):
+    n_turns = len(GENERATION_TASKS) if max_turns is None else min(max_turns, len(GENERATION_TASKS))
+    for turn in range(n_turns):
         user = first_user_message(condition) if turn == 0 else next_user_message(turn)
         messages.append({"role": "user", "content": user})
         text = generate_fn(messages)

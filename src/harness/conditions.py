@@ -35,7 +35,12 @@ class Source(str, Enum):
 
 
 class InstructionForm(str, Enum):
-    """지침 형식 — 긍정형인가 부정형인가(RQ3의 핵심 축)."""
+    """지침 형식 — 긍정형인가 부정형인가.
+
+    **통일 재실험에서는 조건 축이 아니다.** 계획서(§0)의 RQ3은 "지침의 영향력이 어느
+    통로(내용/어텐션)로 흐르는가"이고, 지침의 표현 방식은 그 축이 아니다. step4·step5는
+    POSITIVE로 고정해 통제한다. NEGATIVE는 archive_v1 시절 설계의 잔재로 남아 있다.
+    """
     POSITIVE = "positive"  # "camelCase로 작성하라"
     NEGATIVE = "negative"  # "snake_case로 작성하지 마라"
 
@@ -58,10 +63,12 @@ class InterventionKind(str, Enum):
     KEY = "key"                       # 선행 코드 Key만 치환 (축 A 경로)
     VALUE = "value"                   # 선행 코드 Value만 치환 (축 B 경로)
     KEY_VALUE = "key_value"           # Key+Value 동시 치환 (현재 확보 결과)
-    ATTENTION_AMPLIFY = "attn_amplify"  # 지침 구간 어텐션 증폭/반감
+    ATTENTION_AMPLIFY = "attn_amplify"  # 지침 스팬 어텐션 증폭 (step6 Spotlight 재구현)
+    VALUE_ADD = "value_add"             # 잔차에 조향 방향 더하기 (step6 값 조향, CAA식)
 
 
-# 층 지정: 정수 층 리스트, 또는 전 층 스윕을 뜻하는 "sweep"
+# 층 지정: 정수 층 리스트 / "sweep"(층을 하나씩 순회) / "all"(전 층에 동시 적용)
+#   Spotlight는 전 층·전 헤드에 한꺼번에 거는 기법이라 "all"을 쓴다.
 LayerSpec = Union[Sequence[int], str]
 
 
@@ -84,6 +91,7 @@ class PrecedingCode:
     repo_lang: Optional[str] = None  # source=REPO일 때 언어(python/javascript)
     repo_file: Optional[str] = None  # source=REPO일 때 data/repo_files/ 하위 상대경로
     pool_block: int = 0              # POOL 전용 이름 블록 인덱스(§3 500 커버리지)
+    lang: Optional[str] = None       # 합성 코드 렌더/파싱 언어(python/javascript). step1 언어 다양성용.
 
     def __post_init__(self) -> None:
         if self.n_functions <= 0:
@@ -94,6 +102,8 @@ class PrecedingCode:
             raise ValueError(
                 f"n_compliant는 0..{self.n_functions} 범위여야 한다 (받음: {self.n_compliant})"
             )
+        if self.lang is not None and self.lang not in ("python", "javascript", "js"):
+            raise ValueError("lang은 python/javascript만 허용한다")
         if self.source is Source.REPO:
             # 실코드는 관습이 고정되어 n_compliant/composition을 쓰지 않는다.
             if not self.repo_lang:
@@ -110,7 +120,7 @@ class Instruction:
     """지침 축.
 
     candidates : 생성 실험에서 표기 후보를 두 개로 못 박기 위한 닫힌 선택지.
-                 부정형이 긍정형과 논리적 등가가 되려면 필수(계획서 RQ3 주의사항).
+                 후보를 둘로 닫아야 표기 판정이 성립한다(계획서 §1 통제).
     """
     form: InstructionForm
     target_notation: Notation
@@ -132,7 +142,8 @@ class Instruction:
     def token_notation(self) -> Notation:
         """지침 문장에 실제로 등장하는 표기 토큰.
 
-        긍정형은 목표 표기를, 부정형은 위반 표기를 문장 안에 담는다(RQ3 착안점).
+        긍정형은 목표 표기를, 부정형은 위반 표기를 문장 안에 담는다.
+        (통일 재실험은 긍정형 고정 — 이 분기는 archive_v1 조건에서만 쓰였다.)
         """
         if self.form is InstructionForm.POSITIVE:
             return self.target_notation
@@ -149,31 +160,74 @@ class Intervention:
                 target="instruction"이면 공여는 "반대 지침"(runner가 자동 구성).
     amplify   : ATTENTION_AMPLIFY에서 곱할 배율(>1 증폭, <1 반감).
     target    : 치환 대상 토큰의 종류. "code"=선행 코드 이름(stepC/step1),
-                "instruction"=지침의 표기 지시어 단어(step4, RQ3 인과). 같은 KV 치환
+                "instruction"=지침의 표기 지시어 단어(step5, RQ3 인과). 같은 KV 치환
                 로직을 대상 토큰만 바꿔 재사용한다(CLAUDE.md §3).
     """
     kind: InterventionKind = InterventionKind.NONE
     layers: Optional[LayerSpec] = None
     donor: Optional[str] = None
     amplify: Optional[float] = None
-    target: str = "code"          # 개입 대상: "code"(선행 이름, stepC/1) | "instruction"(지침 지시어, step4)
+    # 한 번에 **여러 방식**을 재고 싶을 때 쓴다(예: 한 층에서 key/value/key_value 전부).
+    # 지정하면 kind 대신 이 목록이 실행을 규정한다 — 전에는 스윕이 세 방식을 하드코딩해
+    # 조건 객체가 실행을 규정하지 못했다(CLAUDE.md §7 위반).
+    kinds: Optional[tuple[str, ...]] = None
+    # ── step6 처방 전용 ───────────────────────────────────────────────
+    strength: Optional[float] = None      # VALUE_ADD: 잔차에 더할 방향의 배율(세기)
+    steer_source: Optional[str] = None    # VALUE_ADD: 방향 출처. "code_contrast"(step3 camel−snake)
+    steer_layer: Optional[int] = None     # VALUE_ADD: **방향을 뽑을 층**. None이면 주입 층과 같다.
+                                          #   다르게 주면 "방향이 층 특이적인가"를 묻는 대조가 된다
+                                          #   (맞는 층에서 뽑은 방향을 엉뚱한 층에 주입).
+    span: Optional[str] = None            # ATTENTION_AMPLIFY: 밀어 올릴 구간
+                                          #   "rule_word"  = 규칙문 지시어만(step5와 스팬 일치)
+                                          #   "instruction"= 지침 문장 전체(원 논문 정의)
+    target: str = "code"          # 개입 대상: "code"(선행 이름, stepC/1) | "instruction"(지침 지시어, step5)
 
     def __post_init__(self) -> None:
         if self.target not in ("code", "instruction"):
             raise ValueError('intervention target은 "code" 또는 "instruction"만 허용한다')
         if self.kind is InterventionKind.NONE:
-            if self.layers or self.donor or self.amplify is not None or self.target != "code":
+            if (self.layers or self.donor or self.amplify is not None
+                    or self.target != "code" or self.kinds
+                    or self.strength is not None or self.steer_source or self.span):
                 raise ValueError("kind=NONE에는 개입 파라미터를 두지 않는다")
             return
+        if self.kinds is not None:
+            allowed = {"key", "value", "key_value"}
+            bad = [k for k in self.kinds if k not in allowed]
+            if bad:
+                raise ValueError(f"잴 수 없는 방식: {bad} (key/value/key_value)")
+            if len(set(self.kinds)) != len(self.kinds):
+                raise ValueError("kinds에 같은 방식을 두 번 넣지 않는다")
         if self.layers is None:
             raise ValueError(f"kind={self.kind.value}에는 layers가 필요하다")
-        if isinstance(self.layers, str) and self.layers != "sweep":
-            raise ValueError('layers 문자열은 "sweep"만 허용한다')
+        if isinstance(self.layers, str) and self.layers not in ("sweep", "all"):
+            raise ValueError(
+                'layers 문자열은 "sweep"(층을 하나씩 순회) 또는 '
+                '"all"(전 층에 동시 적용, Spotlight)만 허용한다'
+            )
         if self.kind is InterventionKind.ATTENTION_AMPLIFY:
             if self.amplify is None:
-                raise ValueError("ATTENTION_AMPLIFY에는 amplify 배율이 필요하다")
+                raise ValueError("ATTENTION_AMPLIFY에는 amplify(목표 비중 ψ_target)가 필요하다")
+            if not 0.0 < self.amplify < 1.0:
+                raise ValueError(f"ψ_target은 0과 1 사이여야 한다 (받음: {self.amplify})")
+            if self.span not in ("rule_word", "instruction"):
+                raise ValueError(
+                    'ATTENTION_AMPLIFY에는 span이 필요하다 ("rule_word" 또는 "instruction"). '
+                    "어디를 밀어 올릴지가 결과를 좌우하므로 조건에 명시한다."
+                )
         elif self.amplify is not None:
-            raise ValueError("치환 계열 개입에는 amplify를 두지 않는다")
+            raise ValueError("치환/조향 계열 개입에는 amplify를 두지 않는다")
+
+        if self.kind is InterventionKind.VALUE_ADD:
+            if self.strength is None:
+                raise ValueError("VALUE_ADD에는 strength(조향 세기)가 필요하다")
+            if self.steer_source is None:
+                raise ValueError("VALUE_ADD에는 steer_source(방향 출처)가 필요하다")
+        elif (self.strength is not None or self.steer_source is not None
+              or self.steer_layer is not None):
+            raise ValueError("VALUE_ADD 외에는 strength/steer_source/steer_layer를 두지 않는다")
+        if self.kind is not InterventionKind.ATTENTION_AMPLIFY and self.span is not None:
+            raise ValueError("span은 ATTENTION_AMPLIFY 전용이다")
 
     @property
     def is_sweep(self) -> bool:
@@ -249,6 +303,12 @@ class Condition:
                 donor=d["intervention"]["donor"],
                 amplify=d["intervention"]["amplify"],
                 target=d["intervention"].get("target", "code"),
+                kinds=(tuple(d["intervention"]["kinds"])
+                       if d["intervention"].get("kinds") else None),
+                strength=d["intervention"].get("strength"),
+                steer_source=d["intervention"].get("steer_source"),
+                steer_layer=d["intervention"].get("steer_layer"),
+                span=d["intervention"].get("span"),
             ),
             seed=d["seed"],
             task_ids=tuple(d.get("task_ids", ())),
@@ -272,19 +332,31 @@ class Condition:
             pre = f"pre-c{p.n_compliant}of{p.n_functions}-{p.composition.value}-syn"
             if p.composition is Composition.POOL:
                 pre += f"-b{p.pool_block}"   # 블록별 결과 파일 분리(§6)
+            if p.lang and p.lang != "python":
+                pre += f"-{_slugify(p.lang)}"   # 언어(js) 결과 파일 분리 (python은 생략)
         ins = (f"ins-{self.instruction.form.value[:3]}-"
                f"{self.instruction.target_notation.value}-{self.instruction.strength.value[:1]}")
         iv = self.intervention
         if iv.kind is InterventionKind.NONE:
             intr = "int-none"
         else:
-            intr = f"int-{iv.kind.value}-{_layer_tag(iv.layers)}"
+            head = "+".join(iv.kinds) if iv.kinds else iv.kind.value
+            intr = f"int-{head}-{_layer_tag(iv.layers)}"
             if iv.target == "instruction":
-                intr += "-instr"          # 지침 지시어 타깃(step4) — 코드 타깃과 파일 구분
+                intr += "-instr"          # 지침 지시어 타깃(step5) — 코드 타깃과 파일 구분
             if iv.donor:
                 intr += f"-{_slugify(iv.donor)}"
             if iv.amplify is not None:
-                intr += f"-x{iv.amplify:g}".replace(".", "p")
+                # 숫자만 치환한다 — 접두사의 하이픈까지 바꾸면 파일명이 깨진다
+                intr += "-psi" + f"{iv.amplify:g}".replace(".", "p")
+            if iv.span:
+                intr += f"-{_slugify(iv.span)}"
+            if iv.strength is not None:
+                intr += "-str" + f"{iv.strength:g}".replace(".", "p").replace("-", "m")
+            if iv.steer_source:
+                intr += f"-{_slugify(iv.steer_source)}"
+            if iv.steer_layer is not None:
+                intr += f"-from{iv.steer_layer}"   # 방향을 뽑은 층이 주입 층과 다를 때
         parts = [m, pre, ins, intr]
         if self.token_unit != "all":          # all은 생략(기존 슬러그 불변), last만 표기
             parts.append(f"tok-{self.token_unit}")
