@@ -172,7 +172,7 @@ def _step3_net():
         b = r["condition"]["preceding"]["pool_block"]
         d = r["metrics"]["extra"]["donor"]
         for L, v in r["metrics"]["per_layer"].items():
-            for k in ("key", "value"):
+            for k in ("key", "value", "key_value"):
                 x = v.get(f"{k}__recovery")
                 if x is not None:
                     cube[m][d][int(L)][k][b] = x
@@ -226,7 +226,7 @@ def _step3_curves():
         b = r["condition"]["preceding"]["pool_block"]
         d = r["metrics"]["extra"]["donor"]
         for L, v in r["metrics"]["per_layer"].items():
-            for k in ("key", "value"):
+            for k in ("key", "value", "key_value"):
                 x = v.get(f"{k}__recovery")
                 if x is not None:
                     cube[m][d][int(L)][k][b] = x
@@ -234,7 +234,7 @@ def _step3_curves():
     for m in MODELS:
         layers = sorted(cube[m]["unrelated_camel"])
         cur = {"layers": layers}
-        for k in ("value", "key"):
+        for k in ("value", "key", "key_value"):
             ys, cs = [], []
             for L in layers:
                 a_, b_ = cube[m]["unrelated_camel"][L][k], cube[m]["unrelated_snake"][L][k]
@@ -256,7 +256,7 @@ def _step5_curves():
                 continue
             m = r["condition"]["model"]["family"]
             for L, v in r["metrics"]["per_layer"].items():
-                for k in ("value", "key"):
+                for k in ("value", "key", "key_value"):
                     x = v.get(f"{k}__recovery")
                     if x is not None:
                         acc[m][(int(L), k)].append(x)
@@ -270,7 +270,7 @@ def _step5_curves():
         if not layers:
             continue
         cur = {"layers": layers}
-        for k in ("value", "key"):
+        for k in ("value", "key", "key_value"):
             cur[k] = [st.mean(treat[m][(L, k)]) - st.mean(ctrl[m][(L, k)]) for L in layers]
             # 두 실행분의 구간을 보수적으로 더한다
             cur[k + "_ci"] = [ci95(treat[m][(L, k)])[1] + ci95(ctrl[m][(L, k)])[1]
@@ -345,12 +345,13 @@ def fig_intervene(out: Path):
     """개입 — 봉우리 층에서 Value와 Key를 각각 치환했을 때의 순효과."""
     code, instr = _step3_curves(), _step5_curves()
 
-    fig, axes = plt.subplots(1, 2, figsize=(3.3, 2.0))
+    fig, axes = plt.subplots(1, 2, figsize=(3.3, 2.1))
     for ax, (src, title) in zip(axes, ((code, "(가) 앞선 코드를 바꿈"),
                                        (instr, "(나) 지침을 바꿈"))):
         x = list(range(len(ORDER)))
-        for off, key, face, lab in ((-0.5, "value", RED, "Value"),
-                                    (0.5, "key", GRAY, "Key")):
+        for off, key, face, lab in ((-1, "value", RED, "Value"),
+                                    (0, "key_value", "#D9A3A3", "Key+Value"),
+                                    (1, "key", GRAY, "Key")):
             ys, es, cols = [], [], []
             for m in ORDER:
                 if m not in src:
@@ -358,7 +359,7 @@ def fig_intervene(out: Path):
                 k = max(range(len(src[m]["layers"])), key=lambda i: src[m]["value"][i])
                 ys.append(src[m][key][k]); es.append(src[m][key + "_ci"][k])
                 cols.append(face)
-            ax.bar([i + off * 0.38 for i in x], ys, 0.38, yerr=es, capsize=1.4,
+            ax.bar([i + off * 0.27 for i in x], ys, 0.27, yerr=es, capsize=1.2,
                    color=cols, linewidth=0, label=lab,
                    error_kw={"linewidth": 0.6, "ecolor": "black"})
         ax.axhline(0, color="black", linewidth=0.6)
@@ -372,7 +373,8 @@ def fig_intervene(out: Path):
         ax.margins(y=0.16)
         _tidy(ax)
     axes[0].set_ylabel("순효과", fontsize=7.5)
-    axes[0].legend(fontsize=6.4, loc="upper left", handlelength=1.1, borderaxespad=0.25)
+    axes[0].legend(fontsize=6.0, loc="upper left", handlelength=1.0,
+                   borderaxespad=0.25, labelspacing=0.25)
     fig.tight_layout(pad=0.3, w_pad=1.0)
     _save(fig, out, "ko_intervene")
 
