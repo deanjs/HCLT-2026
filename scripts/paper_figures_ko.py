@@ -386,49 +386,6 @@ def _real(ex) -> float:
     return 1.0 if (ex["compliant"] and n and any(w in n.lower() for w in TASK_WORDS)) else 0.0
 
 
-def fig_method(out: Path):
-    """처방 — 조향을 건 채로 실제 생성한 이름의 준수율.
-
-    무개입은 네 모델 모두 0.000이라 막대를 세우지 않고 캡션에서 밝힌다.
-    """
-    g = defaultdict(lambda: defaultdict(list))
-    for r in load("step6_steer-generate"):
-        ex = r["metrics"]["extra"]
-        m = r["condition"]["model"]["family"]
-        if ex["method"] == "value_add":
-            key = ("값 조향", float(ex["strength"]))
-        elif ex["method"] == "attn_amplify":
-            key = ("어텐션 증폭", (float(ex["psi_target"]), ex.get("span") or ""))
-        else:
-            key = ("무개입", 0)
-        g[m][key].append(_real(ex))
-
-    def best(m, name):
-        c = [v for k, v in g[m].items() if k[0] == name]
-        return max(c, key=st.mean) if c else []
-
-    TIGHT = {"qwen": "Qwen", "deepseek": "DeepSeek",
-             "stability": "Stable", "llama": "Llama"}
-    fig, ax = plt.subplots(figsize=(3.3, 1.95))
-    x = list(range(len(ORDER)))
-    for off, (name, col) in zip((-0.5, 0.5), (("값 조향", RED), ("어텐션 증폭", GRAY))):
-        ys, es = zip(*[ci95(best(m, name)) for m in ORDER])
-        ax.bar([i + off * 0.38 for i in x], ys, 0.38, yerr=es, capsize=1.4,
-               color=col, linewidth=0, label=name,
-               error_kw={"linewidth": 0.6, "ecolor": "black"})
-    ax.axhline(0, color="black", linewidth=0.6)
-    ax.set_xticks(x)
-    ax.set_xticklabels([TIGHT[m] for m in ORDER], fontsize=7)
-    ax.set_ylabel("실제 준수율", fontsize=7.5)
-    ax.set_ylim(0, 1.10); ax.set_yticks([0, 0.5, 1.0])
-    ax.set_xlim(-0.6, len(ORDER) - 0.4)
-    ax.legend(ncol=2, fontsize=6.6, loc="lower center", bbox_to_anchor=(0.5, 1.0),
-              borderaxespad=0.0, handlelength=1.1)
-    _tidy(ax)
-    fig.tight_layout(pad=0.25)
-    _save(fig, out, "ko_method")
-
-
 def fig_score_vs_real(out: Path):
     """같은 개입을 두 자로 잰다 — 세기를 올릴수록 두 자가 갈라진다.
 
@@ -480,7 +437,7 @@ def fig_score_vs_real(out: Path):
         ax.set_xticklabels([f"{v:g}" for v in S], fontsize=6.8)
         ax.tick_params(axis="y", labelsize=6.8)
         _tidy(ax)
-    fig.supxlabel("값을 미는 세기  (0 = 개입하지 않음)", fontsize=7.5, y=0.02)
+    fig.supxlabel(r"값을 미는 세기 $\alpha$   (0 = 개입하지 않음)", fontsize=7.5, y=0.02)
     fig.legend(ncol=4, fontsize=6.6, handlelength=1.2, columnspacing=0.9,
                loc="lower center", bbox_to_anchor=(0.5, 0.985))
     fig.tight_layout(pad=0.25, rect=(0, 0.04, 1, 1))
@@ -502,7 +459,6 @@ def main() -> None:
     jobs = [(fig_cliff, "docs/step1/figures"),
             (fig_attention, "docs/step4/figures"),
             (fig_intervene, "docs/step3/figures"),
-            (fig_method, "docs/step6/figures"),
             (fig_score_vs_real, "docs/step6/figures")]
     for fn, d in jobs:
         fn(root if root else Path(d))
