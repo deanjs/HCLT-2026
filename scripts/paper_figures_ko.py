@@ -32,18 +32,24 @@ import matplotlib.pyplot as plt
 
 
 def _install_korean_font() -> str:
-    for p in ("/root/.fonts/NanumGothic.ttf",
-              "/usr/share/fonts/truetype/nanum/NanumGothic.ttf"):
-        if Path(p).exists():
-            fm.fontManager.addfont(p)
-            return "NanumGothic"
+    """본문(LaTeX)이 명조 계열이므로 그림도 세리프로 맞춘다.
+
+    고딕으로 뽑으면 발표 자료처럼 보이고 본문과 따로 논다.
+    """
+    for path, name in (("/usr/share/fonts/truetype/nanum/NanumMyeongjo.ttf", "NanumMyeongjo"),
+                       ("/root/.fonts/NanumMyeongjo.ttf", "NanumMyeongjo"),
+                       ("/usr/share/fonts/truetype/nanum/NanumGothic.ttf", "NanumGothic"),
+                       ("/root/.fonts/NanumGothic.ttf", "NanumGothic")):
+        if Path(path).exists():
+            fm.fontManager.addfont(path)
+            return name
     have = {f.name for f in fm.fontManager.ttflist}
-    for name in ("NanumGothic", "Noto Sans CJK KR", "Malgun Gothic", "AppleGothic"):
+    for name in ("NanumMyeongjo", "Noto Serif CJK KR", "NanumGothic"):
         if name in have:
             return name
     raise RuntimeError(
         "한글 글꼴이 없다. 글자가 네모로 깨진 그림을 남기지 않으려고 여기서 멈춘다.\n"
-        "  apt-get install -y fonts-nanum  또는 NanumGothic.ttf를 ~/.fonts에 둔다.")
+        "  apt-get install -y fonts-nanum fonts-nanum-extra")
 
 
 KO = _install_korean_font()
@@ -57,22 +63,21 @@ matplotlib.rcParams.update({
     "ytick.labelsize": 7.5,
     "legend.fontsize": 7,
     # 논문 그림 — 얇은 축, 위·오른쪽 테두리 없음, 가로선만 옅게
-    "axes.linewidth": 0.7,
-    "axes.edgecolor": "#444444",
-    "axes.spines.top": False,
-    "axes.spines.right": False,
-    "axes.labelcolor": "#222222",
-    "text.color": "#222222",
-    "xtick.color": "#444444",
-    "ytick.color": "#444444",
+    "axes.linewidth": 0.6,
+    "axes.edgecolor": "black",
+    "axes.labelcolor": "black",
+    "text.color": "black",
+    "xtick.color": "black",
+    "ytick.color": "black",
     "xtick.direction": "out",
     "ytick.direction": "out",
-    "xtick.major.size": 2.5,
-    "ytick.major.size": 2.5,
-    "xtick.major.width": 0.7,
-    "ytick.major.width": 0.7,
-    "grid.color": "#DDDDDD",
-    "grid.linewidth": 0.5,
+    "xtick.major.size": 2.2,
+    "ytick.major.size": 2.2,
+    "xtick.major.width": 0.6,
+    "ytick.major.width": 0.6,
+    "grid.color": "#CCCCCC",
+    "grid.linewidth": 0.4,
+    "grid.alpha": 0.6,
     "axes.axisbelow": True,
     "lines.linewidth": 1.3,
     "legend.frameon": False,
@@ -82,6 +87,8 @@ matplotlib.rcParams.update({
     "figure.dpi": 300,
     "savefig.dpi": 300,
     "pdf.fonttype": 42,
+    # 로그 눈금의 지수·음수 기호는 한글 글꼴에 없다. 수식 글꼴을 따로 준다
+    "mathtext.fontset": "dejavuserif",
 })
 
 # 채도를 낮춘 색 — 흑백 인쇄에서도 명도가 갈린다
@@ -94,6 +101,7 @@ def _tidy(ax, ygrid=True):
     if ygrid:
         ax.yaxis.grid(True)
     ax.xaxis.grid(False)
+    ax.tick_params(labelcolor="black")
 
 
 MODELS = ["qwen", "deepseek", "llama", "stability"]
@@ -270,54 +278,106 @@ def _step5_curves():
     return out
 
 
+PEAK_MIN = 0.05      # 이 아래면 봉우리라 부르지 않는다
+
+
 def _peak(cur):
-    """Value 순효과가 가장 큰 층과 그 층에서의 값·신뢰구간."""
-    i = max(range(len(cur["layers"])), key=lambda i: cur["value"][i])
-    return (cur["layers"][i],
-            {"value": (cur["value"][i], cur["value_ci"][i]),
-             "key": (cur["key"][i], cur["key_ci"][i])})
+    """Value 순효과가 가장 큰 층. 효과 자체가 없으면 None.
 
-
-def fig_key_vs_value(out: Path):
-    """모델별 봉우리 층에서 Value와 Key를 나란히 세운다.
-
-    색 = 무엇을 바꿨나(앞선 코드 / 지침), 채움 = 어느 경로를 치환했나(Value / Key).
+    곡선이 통째로 0 근처인 모델(지침이 행동을 좌우하지 않는 경우)에서 argmax를
+    그대로 쓰면 잡음 중 최댓값이 봉우리로 둔갑한다. 그런 경우는 층을 특정하지 않는다.
     """
-    code, instr = _step3_curves(), _step5_curves()
-    CODE_C, INSTR_C = "#3B6EA5", "#B04A4A"
+    i = max(range(len(cur["layers"])), key=lambda i: cur["value"][i])
+    return i if cur["value"][i] >= PEAK_MIN else None
 
-    fig, ax = plt.subplots(figsize=(3.3, 2.35))
-    x = [i * 1.15 for i in range(len(ORDER))]
-    w = 0.19
-    bars = [(code, "value", -1.5, CODE_C, CODE_C, "앞선 코드 · Value"),
-            (code, "key",   -0.5, "white", CODE_C, "앞선 코드 · Key"),
-            (instr, "value", 0.5, INSTR_C, INSTR_C, "지침 · Value"),
-            (instr, "key",   1.5, "white", INSTR_C, "지침 · Key")]
-    layers = {}
-    for src, k, off, face, edge, lab in bars:
-        ys, es = [], []
-        for m in ORDER:
-            if m not in src:
-                ys.append(float("nan")); es.append(0.0); continue
-            L, pk = _peak(src[m])
-            layers.setdefault(m, {})[id(src)] = L
-            ys.append(pk[k][0]); es.append(pk[k][1])
-        ax.bar([i + off * w for i in x], ys, w, yerr=es, capsize=1.4,
-               color=face, edgecolor=edge, linewidth=0.9, label=lab,
-               error_kw={"linewidth": 0.6, "ecolor": "#333333"})
-    ax.axhline(0, color="#444444", linewidth=0.7)
-    ax.set_xticks(x)
-    ax.set_xticklabels([f"{SHORT[m]}\nL{layers[m][id(code)]} / L{layers[m][id(instr)]}"
-                        for m in ORDER], fontsize=6.5)
-    ax.set_xlim(-0.55, x[-1] + 0.55)
-    ax.set_ylabel("표기를 되돌린 정도 (순효과)")
-    ax.set_ylim(-0.05, 0.95)
-    ax.set_yticks([0, 0.2, 0.4, 0.6, 0.8])
-    ax.legend(ncol=2, loc="lower center", bbox_to_anchor=(0.5, 1.0),
-              borderaxespad=0.0)
-    _tidy(ax)
-    fig.tight_layout(pad=0.25)
-    _save(fig, out, "ko_key_vs_value")
+
+def _panels(figsize=(3.3, 2.6)):
+    """모델 하나에 판 하나. 선을 한 판에 몰아넣지 않는다."""
+    fig, axes = plt.subplots(2, 2, figsize=figsize, sharex=False)
+    return fig, list(axes.ravel())
+
+
+def _cause_figure(src, out, name, ylab):
+    fig, axes = _panels()
+    for ax, m in zip(axes, ORDER):
+        if m not in src:
+            ax.set_visible(False); continue
+        cur = src[m]
+        L = cur["layers"]
+        ax.plot(L, cur["value"], color=C[m], linewidth=1.1, label="Value")
+        ax.plot(L, cur["key"], color="0.45", linewidth=0.9, linestyle=":", label="Key")
+        lo = [v - c for v, c in zip(cur["value"], cur["value_ci"])]
+        hi = [v + c for v, c in zip(cur["value"], cur["value_ci"])]
+        ax.fill_between(L, lo, hi, color=C[m], alpha=0.18, linewidth=0)
+        i = _peak(cur)
+        ax.axhline(0, color="black", linewidth=0.5)
+        tag = f"봉우리 L{L[i]}" if i is not None else "봉우리 없음"
+        ax.set_title(f"{SHORT[m]}  ({tag})", fontsize=7.5, pad=2.5)
+        ax.tick_params(labelsize=6.5)
+        ax.margins(y=0.18)
+        _tidy(ax)
+    axes[0].legend(fontsize=6.5, loc="upper left", handlelength=1.3,
+                   borderaxespad=0.3)
+    for ax in axes[2:]:
+        ax.set_xlabel("층", fontsize=7.5)
+    for ax in (axes[0], axes[2]):
+        ax.set_ylabel(ylab, fontsize=7)
+    fig.tight_layout(pad=0.3, h_pad=0.8, w_pad=1.0)
+    _save(fig, out, name)
+
+
+def fig_code_cause(out: Path):
+    """앞선 코드의 함수 이름을 바꿨을 때 — 층별 순효과, 모델당 한 판."""
+    _cause_figure(_step3_curves(), out, "ko_cause_code", "순효과")
+
+
+def fig_instr_cause(out: Path):
+    """지침의 표기 지시어를 바꿨을 때 — 층별 순효과, 모델당 한 판."""
+    _cause_figure(_step5_curves(), out, "ko_cause_instr", "순효과")
+
+
+def fig_attention(out: Path):
+    """지침과 앞선 코드가 각각 받는 토큰당 어텐션 — 층별, 모델당 한 판."""
+    obs = defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
+    for r in load("step4_instr-observe"):
+        m = r["condition"]["model"]["family"]
+        cnt = r["metrics"]["extra"].get("span_token_counts", {})
+        for L, v in r["metrics"]["per_layer"].items():
+            x, n = v.get("instr_rule_word__attention_weight"), cnt.get("instr_rule_word")
+            if x is not None and n:
+                obs[m][int(L)]["instr"].append(x / n)
+            # 코드 쪽은 camel과 snake 12개를 전부 합친다. 한쪽만 쓰면 비가 부풀려진다.
+            xs = [(v.get(f"{sp}__attention_weight"), cnt.get(sp))
+                  for sp in ("code_camel", "code_snake")]
+            if all(a_ is not None and b_ for a_, b_ in xs):
+                obs[m][int(L)]["code"].append(sum(a_ for a_, _ in xs) / sum(b_ for _, b_ in xs))
+    cur5 = _step5_curves()
+    peak = {m: cur5[m]["layers"][i] for m in cur5
+            if (i := _peak(cur5[m])) is not None}
+
+    fig, axes = _panels()
+    for ax, m in zip(axes, ORDER):
+        L = sorted(obs[m])
+        ax.plot(L, [st.mean(obs[m][i]["instr"]) for i in L], color=C[m],
+                linewidth=1.1, label="지침")
+        ax.plot(L, [st.mean(obs[m][i]["code"]) for i in L], color="0.45",
+                linewidth=0.9, linestyle=":", label="앞선 코드")
+        if m in peak:
+            ax.axvline(peak[m], color="black", linewidth=0.7, linestyle="--")
+            tag = f"개입 층 L{peak[m]}"
+        else:
+            tag = "개입이 통하지 않음"
+        ax.set_title(f"{SHORT[m]}  ({tag})", fontsize=7.5, pad=2.5)
+        ax.tick_params(labelsize=6.5)
+        ax.margins(y=0.20)
+        _tidy(ax)
+    axes[0].legend(fontsize=6.5, loc="upper left", handlelength=1.3, borderaxespad=0.3)
+    for ax in axes[2:]:
+        ax.set_xlabel("층", fontsize=7.5)
+    for ax in (axes[0], axes[2]):
+        ax.set_ylabel("토큰당 어텐션", fontsize=7)
+    fig.tight_layout(pad=0.3, h_pad=0.8, w_pad=1.0)
+    _save(fig, out, "ko_attention")
 
 
 # ── 그림 3·4. step6 ──────────────────────────────────────────────────────
@@ -327,46 +387,6 @@ TASK_WORDS = ("remove", "duplicat", "dedup", "uniq", "distinct")
 def _real(ex) -> float:
     n = ex["name"]
     return 1.0 if (ex["compliant"] and n and any(w in n.lower() for w in TASK_WORDS)) else 0.0
-
-
-def fig_method(out: Path):
-    """세 처방을 실제 생성한 이름으로 채점한다."""
-    g = defaultdict(lambda: defaultdict(list))
-    for r in load("step6_steer-generate"):
-        ex = r["metrics"]["extra"]
-        m = r["condition"]["model"]["family"]
-        if ex["method"] == "value_add":
-            key = ("값 조향", float(ex["strength"]))
-        elif ex["method"] == "attn_amplify":
-            key = ("어텐션 증폭", (float(ex["psi_target"]), ex.get("span") or ""))
-        else:
-            key = ("무개입", 0)
-        g[m][key].append(_real(ex))
-
-    def best(m, name):
-        c = [v for k, v in g[m].items() if k[0] == name]
-        return max(c, key=st.mean) if c else []
-
-    fig, ax = plt.subplots(figsize=(3.3, 2.4))
-    x = list(range(len(MODELS)))
-    for off, (name, color) in zip((-1, 0, 1),
-                                  (("무개입", "0.78"), ("값 조향", C_VAL),
-                                   ("어텐션 증폭", "#7a7a7a"))):
-        ys, es = [], []
-        for m in MODELS:
-            a, c = ci95(best(m, name))
-            ys.append(a); es.append(c)
-        ax.bar([i + off * 0.26 for i in x], ys, 0.26, yerr=es, capsize=2,
-               color=color, label=name, error_kw={"linewidth": 0.7})
-    ax.set_xticks(x)
-    ax.set_xticklabels([SHORT[m] for m in MODELS])
-    ax.set_ylabel("실제 생성한 이름의 준수율")
-    ax.set_ylim(0, 1.14)
-    ax.legend(frameon=False, ncol=3, handlelength=1.3, columnspacing=1.0,
-              loc="lower center", bbox_to_anchor=(0.5, 1.01), borderaxespad=0.0)
-    ax.grid(axis="y", alpha=0.22, linewidth=0.4)
-    fig.tight_layout(pad=0.3)
-    _save(fig, out, "ko_method")
 
 
 def fig_score_vs_real(out: Path):
@@ -437,8 +457,9 @@ def main() -> None:
     if "--out" in sys.argv:
         root = Path(sys.argv[sys.argv.index("--out") + 1])
     jobs = [(fig_cliff, "docs/step1/figures"),
-            (fig_key_vs_value, "docs/step3/figures"),
-            (fig_method, "docs/step6/figures"),
+            (fig_attention, "docs/step4/figures"),
+            (fig_code_cause, "docs/step3/figures"),
+            (fig_instr_cause, "docs/step5/figures"),
             (fig_score_vs_real, "docs/step6/figures")]
     for fn, d in jobs:
         fn(root if root else Path(d))
