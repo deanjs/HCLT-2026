@@ -135,10 +135,11 @@ def fig_cliff(out: Path):
             1.0 if r["metrics"]["extra"]["first_compliant"] else 0.0)
 
     fig, ax = plt.subplots(figsize=(3.3, 2.35))
-    series = [("qwen", "camel", C["qwen"], "-", "o", 1.0),
-              ("stability", "camel", C["stability"], "-", "s", 1.0),
-              ("qwen", "snake", C["qwen"], "--", "o", 0.0),
-              ("stability", "snake", C["stability"], "--", "s", 0.0)]
+    # 색은 지침 방향(기본 선호와 부딪히는가)을, 선 모양은 모델을 가른다.
+    series = [("qwen", "camel", RED, "-", "o", 1.0),
+              ("stability", "camel", RED, "--", "s", 1.0),
+              ("qwen", "snake", GRAY, "-", "o", 0.0),
+              ("stability", "snake", GRAY, "--", "s", 0.0)]
     for m, tgt, color, ls, mk, fill in series:
         k = (m, tgt)
         if k not in by:
