@@ -52,13 +52,49 @@ matplotlib.rcParams.update({
     "axes.unicode_minus": False,
     "font.size": 8,
     "axes.labelsize": 8.5,
+    "axes.titlesize": 8.5,
     "xtick.labelsize": 7.5,
     "ytick.labelsize": 7.5,
     "legend.fontsize": 7,
-    "axes.linewidth": 0.6,
-    "lines.linewidth": 1.4,
+    # 논문 그림 — 얇은 축, 위·오른쪽 테두리 없음, 가로선만 옅게
+    "axes.linewidth": 0.7,
+    "axes.edgecolor": "#444444",
+    "axes.spines.top": False,
+    "axes.spines.right": False,
+    "axes.labelcolor": "#222222",
+    "text.color": "#222222",
+    "xtick.color": "#444444",
+    "ytick.color": "#444444",
+    "xtick.direction": "out",
+    "ytick.direction": "out",
+    "xtick.major.size": 2.5,
+    "ytick.major.size": 2.5,
+    "xtick.major.width": 0.7,
+    "ytick.major.width": 0.7,
+    "grid.color": "#DDDDDD",
+    "grid.linewidth": 0.5,
+    "axes.axisbelow": True,
+    "lines.linewidth": 1.3,
+    "legend.frameon": False,
+    "legend.handlelength": 1.4,
+    "legend.columnspacing": 1.1,
+    "legend.handletextpad": 0.5,
     "figure.dpi": 300,
+    "savefig.dpi": 300,
+    "pdf.fonttype": 42,
 })
+
+# 채도를 낮춘 색 — 흑백 인쇄에서도 명도가 갈린다
+C = {"qwen": "#3B6EA5", "deepseek": "#D08C3C",
+     "stability": "#B04A4A", "llama": "#4E8A5B"}
+ORDER = ["qwen", "deepseek", "stability", "llama"]   # 범용 모델을 맨 뒤로
+
+
+def _tidy(ax, ygrid=True):
+    if ygrid:
+        ax.yaxis.grid(True)
+    ax.xaxis.grid(False)
+
 
 MODELS = ["qwen", "deepseek", "llama", "stability"]
 SHORT = {"qwen": "Qwen2.5", "deepseek": "DeepSeek",
@@ -90,28 +126,31 @@ def fig_cliff(out: Path):
         by[(c["model"]["family"], c["instruction"]["target_notation"])][n_viol].append(
             1.0 if r["metrics"]["extra"]["first_compliant"] else 0.0)
 
-    fig, ax = plt.subplots(figsize=(3.3, 2.5))
-    series = [("qwen", "camel", "#2e6fbf", "-", "o"),
-              ("stability", "camel", "#c0392b", "-", "s"),
-              ("qwen", "snake", "#2e6fbf", "--", "^"),
-              ("stability", "snake", "#c0392b", ":", "D")]
-    for m, tgt, color, ls, mk in series:
+    fig, ax = plt.subplots(figsize=(3.3, 2.35))
+    series = [("qwen", "camel", C["qwen"], "-", "o", 1.0),
+              ("stability", "camel", C["stability"], "-", "s", 1.0),
+              ("qwen", "snake", C["qwen"], "--", "o", 0.0),
+              ("stability", "snake", C["stability"], "--", "s", 0.0)]
+    for m, tgt, color, ls, mk, fill in series:
         k = (m, tgt)
         if k not in by:
             continue
         xs = sorted(by[k])
-        ax.plot(xs, [st.mean(by[k][x]) for x in xs], marker=mk, ms=3.4,
-                color=color, linestyle=ls, markevery=2, markerfacecolor="white",
-                markeredgewidth=1.1,
+        ax.plot(xs, [st.mean(by[k][x]) for x in xs], color=color, linestyle=ls,
+                linewidth=1.3, marker=mk, ms=3.2, markevery=2,
+                markerfacecolor=color if fill else "white",
+                markeredgecolor=color, markeredgewidth=1.0,
                 label=f"{SHORT[m]} · {'camelCase' if tgt == 'camel' else 'snake_case'}")
-    ax.set_xlabel("앞선 코드에 놓인 위반 이름의 수 (12개 중)")
+    ax.set_xlabel("앞선 코드에 놓인 위반 이름의 수")
     ax.set_ylabel("지침 준수율")
-    ax.set_ylim(-0.05, 1.08)
-    ax.set_xticks(range(0, 13, 2))
-    ax.legend(frameon=False, ncol=2, handlelength=1.8, columnspacing=0.9,
-              loc="lower center", bbox_to_anchor=(0.5, 1.01), borderaxespad=0.0)
-    ax.grid(alpha=0.22, linewidth=0.4)
-    fig.tight_layout(pad=0.3)
+    ax.set_ylim(-0.04, 1.06)
+    ax.set_yticks([0, 0.25, 0.5, 0.75, 1.0])
+    ax.set_xticks(range(0, 13, 3))
+    ax.set_xlim(-0.4, 12.4)
+    ax.legend(ncol=2, loc="lower center", bbox_to_anchor=(0.5, 1.0),
+              borderaxespad=0.0)
+    _tidy(ax)
+    fig.tight_layout(pad=0.25)
     _save(fig, out, "ko_cliff")
 
 
@@ -187,11 +226,12 @@ def _step3_curves():
         layers = sorted(cube[m]["unrelated_camel"])
         cur = {"layers": layers}
         for k in ("value", "key"):
-            ys = []
+            ys, cs = [], []
             for L in layers:
                 a_, b_ = cube[m]["unrelated_camel"][L][k], cube[m]["unrelated_snake"][L][k]
-                ys.append(st.mean([a_[i] - b_[i] for i in sorted(set(a_) & set(b_))]))
-            cur[k] = ys
+                d = [a_[i] - b_[i] for i in sorted(set(a_) & set(b_))]
+                mu, c = ci95(d); ys.append(mu); cs.append(c)
+            cur[k], cur[k + "_ci"] = ys, cs
         out[m] = cur
     return out
 
@@ -223,56 +263,60 @@ def _step5_curves():
         cur = {"layers": layers}
         for k in ("value", "key"):
             cur[k] = [st.mean(treat[m][(L, k)]) - st.mean(ctrl[m][(L, k)]) for L in layers]
+            # 두 실행분의 구간을 보수적으로 더한다
+            cur[k + "_ci"] = [ci95(treat[m][(L, k)])[1] + ci95(ctrl[m][(L, k)])[1]
+                              for L in layers]
         out[m] = cur
     return out
 
 
 def _peak(cur):
-    """Value 순효과가 가장 큰 층과 그 층에서의 Value·Key 값."""
+    """Value 순효과가 가장 큰 층과 그 층에서의 값·신뢰구간."""
     i = max(range(len(cur["layers"])), key=lambda i: cur["value"][i])
-    return cur["layers"][i], cur["value"][i], cur["key"][i]
+    return (cur["layers"][i],
+            {"value": (cur["value"][i], cur["value_ci"][i]),
+             "key": (cur["key"][i], cur["key_ci"][i])})
 
 
 def fig_key_vs_value(out: Path):
-    """봉우리 층에서 Key와 Value를 세로선으로 이어 한눈에 벌어짐을 보인다."""
-    code, instr = _step3_curves(), _step5_curves()
-    COLOR = {"qwen": "#2e6fbf", "deepseek": "#e08214",
-             "llama": "#2e8b57", "stability": "#c0392b"}
-    ORDER = ["qwen", "deepseek", "stability", "llama"]   # 범용 모델을 맨 뒤로
-    TIGHT = {"qwen": "Qwen", "deepseek": "DeepSeek",
-             "stability": "Stable", "llama": "Llama"}
+    """모델별 봉우리 층에서 Value와 Key를 나란히 세운다.
 
-    fig, ax = plt.subplots(figsize=(3.3, 2.4))
-    xs, labels = [], []
-    for gi, (src, gname) in enumerate(((code, "앞선 코드"), (instr, "지침"))):
-        for mi, m in enumerate(ORDER):
+    색 = 무엇을 바꿨나(앞선 코드 / 지침), 채움 = 어느 경로를 치환했나(Value / Key).
+    """
+    code, instr = _step3_curves(), _step5_curves()
+    CODE_C, INSTR_C = "#3B6EA5", "#B04A4A"
+
+    fig, ax = plt.subplots(figsize=(3.3, 2.35))
+    x = [i * 1.15 for i in range(len(ORDER))]
+    w = 0.19
+    bars = [(code, "value", -1.5, CODE_C, CODE_C, "앞선 코드 · Value"),
+            (code, "key",   -0.5, "white", CODE_C, "앞선 코드 · Key"),
+            (instr, "value", 0.5, INSTR_C, INSTR_C, "지침 · Value"),
+            (instr, "key",   1.5, "white", INSTR_C, "지침 · Key")]
+    layers = {}
+    for src, k, off, face, edge, lab in bars:
+        ys, es = [], []
+        for m in ORDER:
             if m not in src:
-                continue
-            L, v, k = _peak(src[m])
-            x = gi * 5.0 + mi
-            xs.append(x); labels.append(f"{TIGHT[m]}\nL{L}")
-            ax.vlines(x, k, v, color=COLOR[m], linewidth=1.4, zorder=2)
-            ax.plot(x, v, marker="o", ms=5.2, color=COLOR[m], zorder=3)
-            ax.plot(x, k, marker="s", ms=4.0, mfc="white", mec="0.35",
-                    mew=1.0, linestyle="", zorder=4)
-    ax.axhline(0, color="black", linewidth=0.6)
-    ax.axvline(4.0, color="0.75", linewidth=0.7, linestyle=":")
-    ax.text(1.5, 0.96, "앞선 코드를 바꿈", fontsize=6.6, color="0.3", ha="center")
-    ax.text(6.5, 0.96, "지침을 바꿈", fontsize=6.6, color="0.3", ha="center")
-    ax.set_xticks(xs)
-    ax.set_xticklabels(labels, fontsize=5.6)
-    ax.set_ylabel("표기를 되돌린 정도 (순효과)", fontsize=8)
-    ax.set_ylim(-0.08, 1.06)
-    ax.set_xlim(-0.7, 8.7)
-    handles = [plt.Line2D([], [], marker="o", ms=5.2, color="0.35", linestyle="",
-                          label="Value만 치환"),
-               plt.Line2D([], [], marker="s", ms=4.0, mfc="white", mec="0.35",
-                          mew=1.0, linestyle="", label="Key만 치환")]
-    ax.legend(handles=handles, frameon=False, ncol=2, fontsize=6.8,
-              handlelength=1.0, columnspacing=1.2,
-              loc="lower center", bbox_to_anchor=(0.5, 1.01), borderaxespad=0.0)
-    ax.grid(axis="y", alpha=0.22, linewidth=0.4)
-    fig.tight_layout(pad=0.3)
+                ys.append(float("nan")); es.append(0.0); continue
+            L, pk = _peak(src[m])
+            layers.setdefault(m, {})[id(src)] = L
+            ys.append(pk[k][0]); es.append(pk[k][1])
+        ax.bar([i + off * w for i in x], ys, w, yerr=es, capsize=1.4,
+               color=face, edgecolor=edge, linewidth=0.9, label=lab,
+               error_kw={"linewidth": 0.6, "ecolor": "#333333"})
+    ax.axhline(0, color="#444444", linewidth=0.7)
+    ax.set_xticks(x)
+    ax.set_xticklabels([f"{SHORT[m]}\nL{layers[m][id(code)]} / L{layers[m][id(instr)]}"
+                        for m in ORDER], fontsize=6.5)
+    ax.set_xlim(-0.55, x[-1] + 0.55)
+    ax.set_ylabel("표기를 되돌린 정도 (순효과)")
+    ax.set_ylim(-0.05, 0.95)
+    ax.set_yticks([0, 0.2, 0.4, 0.6, 0.8])
+    ax.legend(ncol=2, loc="lower center", bbox_to_anchor=(0.5, 1.0),
+              borderaxespad=0.0)
+    _tidy(ax)
+    fig.tight_layout(pad=0.25)
     _save(fig, out, "ko_key_vs_value")
 
 
@@ -352,30 +396,31 @@ def fig_score_vs_real(out: Path):
             gn[r["condition"]["model"]["family"]][float(ex["strength"])].append(_real(ex))
 
     S = [0.0, 1.0, 2.0, 4.0, 8.0]
-    COLOR = {"qwen": "#2e6fbf", "deepseek": "#e08214",
-             "llama": "#2e8b57", "stability": "#c0392b"}
-    MARK = {"qwen": "o", "deepseek": "s", "llama": "^", "stability": "D"}
+    MARK = {"qwen": "o", "deepseek": "s", "stability": "D", "llama": "^"}
 
     fig, (a1, a2) = plt.subplots(1, 2, figsize=(3.35, 1.95))
     x = list(range(len(S)))
-    for m in MODELS:
+    for m in ORDER:
+        kw = dict(color=C[m], marker=MARK[m], ms=2.8, linewidth=1.1,
+                  markeredgewidth=0)
         a1.plot(x, [st.mean(gn[m][v]) if gn[m].get(v) else 0.0 for v in S],
-                color=COLOR[m], marker=MARK[m], ms=2.6, linewidth=1.1, label=SHORT[m])
-        a2.plot(x, [st.mean(rc[m][v]) if rc[m].get(v) else 0.0 for v in S],
-                color=COLOR[m], marker=MARK[m], ms=2.6, linewidth=1.1)
-    a1.set_ylabel("실제 준수율", fontsize=7); a1.set_ylim(-0.05, 1.10)
-    a1.set_title("생성한 이름", fontsize=7.5, pad=3)
-    a2.set_ylabel("되돌림률", fontsize=7); a2.set_ylim(-0.15, 4.8)
-    a2.set_title("선호 점수", fontsize=7.5, pad=3)
+                label=SHORT[m], **kw)
+        a2.plot(x, [st.mean(rc[m][v]) if rc[m].get(v) else 0.0 for v in S], **kw)
+    a1.set_ylabel("실제 준수율", fontsize=7.5)
+    a1.set_ylim(-0.04, 1.06); a1.set_yticks([0, 0.5, 1.0])
+    a1.set_title("(가) 생성한 이름", fontsize=7.5, pad=3)
+    a2.set_ylabel("되돌림률", fontsize=7.5)
+    a2.set_ylim(-0.15, 4.7); a2.set_yticks([0, 2, 4])
+    a2.set_title("(나) 선호 점수", fontsize=7.5, pad=3)
     for ax in (a1, a2):
         ax.set_xticks(x)
-        ax.set_xticklabels([f"{v:g}" for v in S], fontsize=6.5)
-        ax.tick_params(axis="y", labelsize=6.5)
-        ax.grid(alpha=0.22, linewidth=0.4)
-    fig.supxlabel("값을 미는 세기  (0 = 개입하지 않음)", fontsize=7.5, y=0.005)
-    fig.legend(frameon=False, ncol=4, handlelength=1.3, columnspacing=0.9,
-               fontsize=6.3, loc="lower center", bbox_to_anchor=(0.5, 0.99))
-    fig.tight_layout(pad=0.4)
+        ax.set_xticklabels([f"{v:g}" for v in S], fontsize=6.8)
+        ax.tick_params(axis="y", labelsize=6.8)
+        _tidy(ax)
+    fig.supxlabel("값을 미는 세기  (0 = 개입하지 않음)", fontsize=7.5, y=0.02)
+    fig.legend(ncol=4, fontsize=6.6, handlelength=1.2, columnspacing=0.9,
+               loc="lower center", bbox_to_anchor=(0.5, 0.985))
+    fig.tight_layout(pad=0.25, rect=(0, 0.04, 1, 1))
     _save(fig, out, "ko_score_vs_real")
 
 
