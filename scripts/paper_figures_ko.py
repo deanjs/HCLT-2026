@@ -289,7 +289,6 @@ def fig_score_vs_real(out: Path):
     a1.set_title("생성한 이름으로 재면", fontsize=8.5, pad=4)
     a2.set_ylabel("선호 점수 되돌림률"); a2.set_ylim(-0.15, 4.8)
     a2.set_title("선호 점수로 재면", fontsize=8.5, pad=4)
-    a2.axhline(1.0, color="0.45", linestyle=":", linewidth=0.9)  # 1 = 완전히 되돌아온 선(캡션에서 말한다)
     for ax in (a1, a2):
         ax.set_xticks(x)
         ax.set_xticklabels([f"{v:g}" for v in S])
