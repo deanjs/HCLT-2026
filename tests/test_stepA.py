@@ -141,3 +141,34 @@ def test_intervention_path_needs_handle():
 def test_generation_needs_a_generator():
     with pytest.raises(ValueError):
         run(_cond())  # handle도 generate_fn도 없음
+
+
+# ── 접두 강제(forced_prefix) — step1 준수율 측정 방식 ──────────────────────
+
+def _echo_gen(notation):
+    """새 함수 앞에 **기존 모듈을 재출력**하는 가짜 생성기.
+
+    DeepSeek·StableCode가 실제로 보인 행동이다. 자유 생성에서는 이름 추출기가
+    재출력된 선행 함수 이름을 집어 잘못된 표기가 기록된다.
+    """
+    def gen(messages):
+        task = next(t for t in GENERATION_TASKS if t.description in messages[-1]["content"])
+        return ("Here is the updated module with the new function:\n\n```python\n"
+                "def echoed_first(value):\n    return value\n\n"
+                f"def {task.name(notation)}({', '.join(task.params)}):\n    ...\n```")
+    return gen
+
+
+def test_free_generation_can_pick_echoed_name():
+    """자유 생성의 알려진 함정 — 첫 def가 재출력된 선행 이름이면 그것이 기록된다."""
+    out = run(_cond(n_compliant=0), generate_fn=_echo_gen(Notation.CAMEL), max_turns=1)
+    e = out.metrics.extra
+    assert e["turn_names"][0] == "echoed_first"     # 새 함수가 아니라 에코를 집었다
+    assert e["forced_prefix"] is None
+
+
+def test_forced_prefix_is_recorded():
+    """어느 방식으로 잰 값인지 결과에 남아야 한다(슬러그에는 안 들어간다)."""
+    out = run(_cond(n_compliant=0), generate_fn=_fake_gen(Notation.CAMEL),
+              max_turns=1, forced_prefix="def ")
+    assert out.metrics.extra["forced_prefix"] == "def "
