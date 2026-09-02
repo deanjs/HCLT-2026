@@ -142,10 +142,10 @@ def fig_cliff(out: Path):
         by[(c["model"]["family"], c["instruction"]["target_notation"])][n_viol].append(
             1.0 if r["metrics"]["extra"]["first_compliant"] else 0.0)
 
-    # 그림 2(fig_attention)와 **완전히 같은 구조**로 그린다: 같은 figsize, 같은 여백,
-    # 같은 잘라내기, 범례도 판 안. 하나라도 다르면 상자나 판 크기가 어긋난다.
-    # 범례를 판 밖으로 빼면 그만큼 격자가 눌리므로 판 크기를 맞출 수 없다.
-    fig, axes = plt.subplots(2, 2, figsize=(3.3, 2.65))
+    # 상자를 **논문에 실제로 실린 그림 2**(가로:세로 = 1.4174)에 맞춘다. 저장소의
+    # fig_attention은 1.233이라 다르다 — 투고본 그림은 저장소에 없는 판으로 뽑혔다.
+    # 폭 247.07pt 기준 높이 174.31pt이며, _save의 box_pt로 그 크기에 못 박는다.
+    fig, axes = plt.subplots(2, 2, figsize=(3.3, 2.285))
     for ax, m in zip(axes.ravel(), ORDER):
         # 표식 없이 색만으로 가른다(그림 2와 같다). 선 굵기도 그림 2를 따른다.
         for tgt, color, lw, lab in (("snake", GRAY, 1.0, "snake_case 지침"),
@@ -174,7 +174,7 @@ def fig_cliff(out: Path):
                       handlelength=1.1, borderaxespad=0.8, labelspacing=0.35,
                       framealpha=1.0)
     fig.tight_layout(pad=0.3, h_pad=0.7, w_pad=0.9)
-    _save(fig, out, "ko_cliff", box_pt=(247.07, 200.38))   # 그림 2와 같은 상자
+    _save(fig, out, "ko_cliff", box_pt=(247.07, 174.31))   # 그림 2와 같은 상자
 
 
 # ── 그림 2. Key와 Value 중 어느 쪽이 표기를 나르나 (step3 + step5) ───────
