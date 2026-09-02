@@ -99,7 +99,7 @@ class ModelHandle:
         self,
         messages: list[dict[str, str]],
         *,
-        prefix: str = "def ",
+        prefix: str = "def",
         max_new_tokens: int = 20,
         seed: int = 0,
         temperature: float = 0.0,
@@ -113,6 +113,12 @@ class ModelHandle:
         그 경로가 원천 차단된다. observe_generation_query의 forced_prefix와 같은 방식이다.
 
         반환값은 `prefix + 생성분`이라 first_function_name을 그대로 적용할 수 있다.
+
+        **접두는 공백으로 끝내지 않는다("def", "def " 아님).** BPE는 공백을 뒤따르는
+        단어에 붙여 한 토큰으로 만든다(" removeDuplicates"). 프롬프트가 공백으로 끝나면
+        모델은 공백 없이 시작하는 토큰만 고를 수 있어 단어가 쪼개진다 — StableCode에서
+        `xtendList`·`xt_remove_duplicates` 같은 깨진 이름이 나왔다. 공백을 떼면 모델이
+        선행 공백째로 이름을 생성해 정상 토큰 경계를 얻는다.
         """
         import torch
 
