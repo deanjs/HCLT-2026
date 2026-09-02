@@ -95,6 +95,46 @@ class ModelHandle:
             )
         return tok.decode(out[0, input_len:], skip_special_tokens=True)
 
+    def chat_generate_prefilled(
+        self,
+        messages: list[dict[str, str]],
+        *,
+        prefix: str = "def ",
+        max_new_tokens: int = 20,
+        seed: int = 0,
+        temperature: float = 0.0,
+    ) -> str:
+        """assistant 자리에 `prefix`를 미리 채우고 이어서 생성한다(step1 준수율).
+
+        chat_generate(자유 생성)로는 모델이 설명 문장과 기존 모듈 재출력부터 시작해
+        **토큰 한도 안에 새 함수 이름에 닿지 못하는** 일이 생긴다. 그러면 이름 추출기가
+        재출력된 선행 함수 이름을 집어, "문맥을 따라 위반했다"와 "이름을 아예 못 썼다"가
+        같은 값으로 저장된다(조용한 실패). 접두를 강제하면 **다음 토큰이 곧 함수 이름**이라
+        그 경로가 원천 차단된다. observe_generation_query의 forced_prefix와 같은 방식이다.
+
+        반환값은 `prefix + 생성분`이라 first_function_name을 그대로 적용할 수 있다.
+        """
+        import torch
+
+        tok = self.tokenizer
+        prompt_text = tok.apply_chat_template(
+            messages, tokenize=False, add_generation_prompt=True
+        ) + prefix
+        enc = tok(prompt_text, return_tensors="pt", add_special_tokens=False)
+        enc = {k: v.to(self.model.device) for k, v in enc.items()}
+        input_len = enc["input_ids"].shape[1]
+        torch.manual_seed(seed)
+        do_sample = bool(temperature and temperature > 0)
+        with torch.no_grad():
+            out = self.model.generate(
+                **enc,
+                max_new_tokens=max_new_tokens,
+                do_sample=do_sample,
+                temperature=temperature if do_sample else None,
+                pad_token_id=tok.eos_token_id,
+            )
+        return prefix + tok.decode(out[0, input_len:], skip_special_tokens=True)
+
     def observe_generation_query(
         self,
         messages: list[dict[str, str]],

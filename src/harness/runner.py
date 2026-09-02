@@ -80,6 +80,7 @@ def run(
     generate_fn: Optional[GenerateFn] = None,
     max_new_tokens: int = 256,
     max_turns: Optional[int] = None,
+    forced_prefix: Optional[str] = None,
 ) -> RunOutput:
     """조건 하나를 실행한다.
 
@@ -89,6 +90,11 @@ def run(
 
     생성은 handle.chat_generate 또는 주입한 generate_fn을 쓴다
     (후자는 모델 없이 파이프라인을 테스트하기 위한 seam).
+
+    forced_prefix: 주면 assistant 자리를 그 문자열로 채우고 이어서 생성한다("def ").
+      자유 생성은 모델이 설명·모듈 재출력부터 시작해 토큰 한도 안에 새 함수 이름에
+      닿지 못할 수 있고, 그때 이름 추출기가 재출력된 선행 이름을 집는다. 접두를
+      강제하면 다음 토큰이 곧 이름이라 그 경로가 사라진다(§7 조용한 실패 금지).
     """
     if mode == "observe":
         return _run_observation(condition, handle)
@@ -117,7 +123,8 @@ def run(
     if condition.intervention.kind is not InterventionKind.NONE:
         # 개입 경로(step C): KV 치환으로 준수 선호도 회복 측정
         return _run_intervention(condition, handle)
-    return _run_generation(condition, handle, generate_fn, max_new_tokens, max_turns)
+    return _run_generation(condition, handle, generate_fn, max_new_tokens, max_turns,
+                           forced_prefix)
 
 
 def _run_intervention(condition: Condition, handle: Optional[ModelHandle]) -> RunOutput:
@@ -812,6 +819,7 @@ def _run_generation(
     generate_fn: Optional[GenerateFn],
     max_new_tokens: int,
     max_turns: Optional[int] = None,
+    forced_prefix: Optional[str] = None,
 ) -> RunOutput:
     """생성 경로 — 선행 12 + 순차 생성을 하고 표기를 측정한다(step A / step1).
 
@@ -821,9 +829,15 @@ def _run_generation(
     if generate_fn is None:
         if handle is None:
             raise ValueError("생성에는 handle 또는 generate_fn 중 하나가 필요하다")
-        generate_fn = lambda msgs: handle.chat_generate(
-            msgs, max_new_tokens=max_new_tokens, seed=condition.seed
-        )
+        if forced_prefix:
+            generate_fn = lambda msgs: handle.chat_generate_prefilled(
+                msgs, prefix=forced_prefix, max_new_tokens=max_new_tokens,
+                seed=condition.seed
+            )
+        else:
+            generate_fn = lambda msgs: handle.chat_generate(
+                msgs, max_new_tokens=max_new_tokens, seed=condition.seed
+            )
 
     # system(지침) + 순차 3턴. 모델의 이전 답이 히스토리에 쌓여 자기증폭이 누적된다.
     # 코드 언어(합성=preceding.lang, 실코드=repo_lang) → 이름 추출기 선택
@@ -859,6 +873,9 @@ def _run_generation(
             "turn_names": names,   # 모델이 실제 고른 함수명 (표기 판정의 근거)
             "turn_texts": texts,   # 턴별 생성 원문 (눈으로 검증)
             "target": target,
+            # 어느 생성 방식으로 잰 값인가. None=자유 생성, "def "=접두 강제.
+            # 슬러그에 안 들어가므로 이 필드가 유일한 구분자다(§6 불변 저장).
+            "forced_prefix": forced_prefix,
             "first_compliant": first_compliant,
             "first_violated": not first_compliant,
             # 자기증폭: 첫 함수가 위반일 때 뒤 함수도 위반인 비율
