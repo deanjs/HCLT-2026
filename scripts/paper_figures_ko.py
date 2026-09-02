@@ -142,9 +142,9 @@ def fig_cliff(out: Path):
         by[(c["model"]["family"], c["instruction"]["target_notation"])][n_viol].append(
             1.0 if r["metrics"]["extra"]["first_compliant"] else 0.0)
 
-    # 높이는 저장 결과가 그림 2(1030x835)와 같아지도록 맞춘 값이다. 범례를 판 위로
-    # 뺀 만큼 axes가 눌려야 하므로 figsize가 곧 결과 크기가 아니다.
-    fig, axes = plt.subplots(2, 2, figsize=(3.3, 2.495), sharex=True, sharey=True)
+    # 그림 2와 **같은 판 구조**여야 논문에서 나란히 놓였을 때 격자가 어긋나지 않는다.
+    # figsize·범례 위치·여백을 그림 2에 맞춘다(fig_attention 참조).
+    fig, axes = plt.subplots(2, 2, figsize=(3.3, 2.65), sharex=True, sharey=True)
     for ax, m in zip(axes.ravel(), ORDER):
         for tgt, color, mk, lab in (("camel", RED, "o", "camelCase 지침"),
                                     ("snake", GRAY, "s", "snake_case 지침")):
@@ -162,15 +162,15 @@ def fig_cliff(out: Path):
         ax.set_xlim(-0.4, 12.4)
         ax.tick_params(labelsize=6.2)
         _tidy(ax)
-    # 범례를 판 안에 두면 곡선과 겹친다(네 판 모두 빈 구석이 없다). 판 위로 뺀다.
-    h, l = axes[0][0].get_legend_handles_labels()
-    fig.legend(h, l, ncol=2, loc="lower center", bbox_to_anchor=(0.5, 0.985),
-               fontsize=6.4, handlelength=1.5, columnspacing=1.4, borderaxespad=0.0)
+    # 그림 2처럼 범례를 첫 판 안에 둔다(판 위로 빼면 그만큼 격자가 눌려 그림 2와 어긋난다).
+    # Qwen 판은 왼쪽이 곡선으로 차 있으므로 비어 있는 오른쪽 가운데에 놓는다.
+    axes[0][0].legend(fontsize=6.2, loc="center right", handlelength=1.2,
+                      borderaxespad=0.4)
     for ax in axes[1]:
         ax.set_xlabel("위반 이름의 수", fontsize=7.5)
     for ax in axes[:, 0]:
         ax.set_ylabel("지침 준수율", fontsize=7)
-    fig.tight_layout(pad=0.3, h_pad=0.7, w_pad=0.9, rect=(0, 0, 1, 0.965))
+    fig.tight_layout(pad=0.3, h_pad=0.7, w_pad=0.9)
     _save(fig, out, "ko_cliff")
 
 
