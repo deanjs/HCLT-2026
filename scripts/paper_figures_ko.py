@@ -147,15 +147,15 @@ def fig_cliff(out: Path):
     # 범례를 판 밖으로 빼면 그만큼 격자가 눌리므로 판 크기를 맞출 수 없다.
     fig, axes = plt.subplots(2, 2, figsize=(3.3, 2.65))
     for ax, m in zip(axes.ravel(), ORDER):
-        for tgt, color, mk, lab in (("camel", RED, "o", "camelCase 지침"),
-                                    ("snake", GRAY, "s", "snake_case 지침")):
+        # 표식 없이 색만으로 가른다(그림 2와 같다). 선 굵기도 그림 2를 따른다.
+        for tgt, color, lw, lab in (("snake", GRAY, 1.0, "snake_case 지침"),
+                                    ("camel", RED, 1.2, "camelCase 지침")):
             k = (m, tgt)
             if k not in by:
                 continue
             xs = sorted(by[k])
-            ax.plot(xs, [st.mean(by[k][x]) for x in xs], color=color, linewidth=1.2,
-                    marker=mk, ms=2.6, markevery=2, markerfacecolor=color,
-                    markeredgecolor=color, label=lab)
+            ax.plot(xs, [st.mean(by[k][x]) for x in xs], color=color,
+                    linewidth=lw, label=lab)
         ax.set_title(SHORT[m], fontsize=7.5, pad=2.5)
         ax.set_ylim(-0.05, 1.07)
         ax.set_yticks([0, 0.5, 1.0])
@@ -167,11 +167,12 @@ def fig_cliff(out: Path):
         ax.set_xlabel("위반 이름의 수", fontsize=7.5)
     for ax in axes[:, 0]:
         ax.set_ylabel("지침 준수율", fontsize=7)
-    # 범례는 판 안이어야 격자 크기가 그림 2와 같다. 네 판 중 StableCode가 가장 넓게
-    # 비어 있다 — 빨강이 위반 3개부터 0에, 회색이 1.0에 붙어 가운데가 통째로 열린다.
-    # (Qwen 판은 빨강이 그 자리를 가로질러 내려간다.)
-    axes[1][0].legend(fontsize=6.0, loc="center right", handlelength=1.1,
-                      borderaxespad=0.5, labelspacing=0.35, framealpha=1.0)
+    # 그림 2와 같이 첫 판 안에 둔다. Qwen 판은 회색이 1.0에, 빨강이 위반 5개부터
+    # 0.0에 붙어 오른쪽 위가 비어 있다. 범례 순서는 빨강이 위로 오게 뒤집는다.
+    h, l = axes[0][0].get_legend_handles_labels()
+    axes[0][0].legend(h[::-1], l[::-1], fontsize=6.0, loc="upper right",
+                      handlelength=1.1, borderaxespad=0.8, labelspacing=0.35,
+                      framealpha=1.0)
     fig.tight_layout(pad=0.3, h_pad=0.7, w_pad=0.9)
     _save(fig, out, "ko_cliff", box_pt=(247.07, 200.38))   # 그림 2와 같은 상자
 
