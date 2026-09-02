@@ -154,7 +154,7 @@ def fig_cliff(out: Path):
                 continue
             xs = sorted(by[k])
             ax.plot(xs, [st.mean(by[k][x]) for x in xs], color=color, linewidth=1.2,
-                    marker=mk, ms=2.6, markevery=3, markerfacecolor=color,
+                    marker=mk, ms=2.6, markevery=2, markerfacecolor=color,
                     markeredgecolor=color, label=lab)
         ax.set_title(SHORT[m], fontsize=7.5, pad=2.5)
         ax.set_ylim(-0.05, 1.07)
@@ -167,10 +167,11 @@ def fig_cliff(out: Path):
         ax.set_xlabel("위반 이름의 수", fontsize=7.5)
     for ax in axes[:, 0]:
         ax.set_ylabel("지침 준수율", fontsize=7)
-    # 그림 2는 범례를 첫 판 왼쪽 위에 둔다. 이 그림은 그 자리에 선이 지나므로
-    # 비어 있는 오른쪽 가운데에 놓는다 — 판 안이어야 격자 크기가 그림 2와 같아진다.
-    axes[0][0].legend(fontsize=6.2, loc="center right", handlelength=1.2,
-                      borderaxespad=0.3)
+    # 범례는 판 안이어야 격자 크기가 그림 2와 같다. 네 판 중 StableCode가 가장 넓게
+    # 비어 있다 — 빨강이 위반 3개부터 0에, 회색이 1.0에 붙어 가운데가 통째로 열린다.
+    # (Qwen 판은 빨강이 그 자리를 가로질러 내려간다.)
+    axes[1][0].legend(fontsize=6.0, loc="center right", handlelength=1.1,
+                      borderaxespad=0.5, labelspacing=0.35, framealpha=1.0)
     fig.tight_layout(pad=0.3, h_pad=0.7, w_pad=0.9)
     _save(fig, out, "ko_cliff", box_pt=(247.07, 200.38))   # 그림 2와 같은 상자
 
