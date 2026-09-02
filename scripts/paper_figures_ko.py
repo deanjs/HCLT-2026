@@ -164,15 +164,17 @@ def fig_cliff(out: Path):
         ax.set_xlim(-0.4, 12.4)
         ax.tick_params(labelsize=6.2)
         _tidy(ax)
-    # 그림 2처럼 범례를 첫 판 안에 둔다(판 위로 빼면 그만큼 격자가 눌려 그림 2와 어긋난다).
-    # Qwen 판은 왼쪽이 곡선으로 차 있으므로 비어 있는 오른쪽 가운데에 놓는다.
-    axes[0][0].legend(fontsize=6.2, loc="center right", handlelength=1.2,
-                      borderaxespad=0.4)
     for ax in axes[1]:
         ax.set_xlabel("위반 이름의 수", fontsize=7.5)
     for ax in axes[:, 0]:
         ax.set_ylabel("지침 준수율", fontsize=7)
-    fig.tight_layout(pad=0.45, h_pad=0.7, w_pad=0.9)
+    # 범례는 판 밖 맨 아래. 상자 크기는 위에서 못 박았으므로 범례를 빼도 그림 2와
+    # 어긋나지 않는다 — 격자만 그만큼 눌린다.
+    fig.tight_layout(pad=0.45, h_pad=0.7, w_pad=0.9, rect=(0, 0.085, 1, 1))
+    h, l = axes[0][0].get_legend_handles_labels()
+    fig.legend(h, l, ncol=2, loc="lower center", bbox_to_anchor=(0.5, -0.004),
+               fontsize=6.4, handlelength=1.5, columnspacing=1.6, borderaxespad=0.0,
+               frameon=False)
     _save(fig, out, "ko_cliff", tight=False)
 
 
