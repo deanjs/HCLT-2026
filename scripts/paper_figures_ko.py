@@ -173,8 +173,8 @@ def fig_cliff(out: Path):
     # 0.0에 붙어 오른쪽 위가 비어 있다. 범례 순서는 빨강이 위로 오게 뒤집는다.
     h, l = axes[0][0].get_legend_handles_labels()
     axes[0][0].legend(h[::-1], l[::-1], fontsize=6.0, loc="upper right",
-                      handlelength=1.1, borderaxespad=0.8, labelspacing=0.35,
-                      framealpha=1.0)
+                      bbox_to_anchor=(1.015, 0.955), handlelength=1.1,
+                      labelspacing=0.35, framealpha=1.0)
     fig.tight_layout(pad=0.3, h_pad=0.7, w_pad=0.9)
     _save(fig, out, "ko_cliff", box_pt=(247.07, 174.31))   # 그림 2와 같은 상자
 
