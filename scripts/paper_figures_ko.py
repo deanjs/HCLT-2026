@@ -142,7 +142,9 @@ def fig_cliff(out: Path):
         by[(c["model"]["family"], c["instruction"]["target_notation"])][n_viol].append(
             1.0 if r["metrics"]["extra"]["first_compliant"] else 0.0)
 
-    fig, axes = plt.subplots(2, 2, figsize=(3.3, 2.65), sharex=True, sharey=True)
+    # 높이는 저장 결과가 그림 2(1030x835)와 같아지도록 맞춘 값이다. 범례를 판 위로
+    # 뺀 만큼 axes가 눌려야 하므로 figsize가 곧 결과 크기가 아니다.
+    fig, axes = plt.subplots(2, 2, figsize=(3.3, 2.495), sharex=True, sharey=True)
     for ax, m in zip(axes.ravel(), ORDER):
         for tgt, color, mk, lab in (("camel", RED, "o", "camelCase 지침"),
                                     ("snake", GRAY, "s", "snake_case 지침")):
@@ -160,13 +162,15 @@ def fig_cliff(out: Path):
         ax.set_xlim(-0.4, 12.4)
         ax.tick_params(labelsize=6.2)
         _tidy(ax)
-    axes[0][0].legend(fontsize=6.2, loc="lower left", handlelength=1.3,
-                      borderaxespad=0.25)
+    # 범례를 판 안에 두면 곡선과 겹친다(네 판 모두 빈 구석이 없다). 판 위로 뺀다.
+    h, l = axes[0][0].get_legend_handles_labels()
+    fig.legend(h, l, ncol=2, loc="lower center", bbox_to_anchor=(0.5, 0.985),
+               fontsize=6.4, handlelength=1.5, columnspacing=1.4, borderaxespad=0.0)
     for ax in axes[1]:
         ax.set_xlabel("위반 이름의 수", fontsize=7.5)
     for ax in axes[:, 0]:
         ax.set_ylabel("지침 준수율", fontsize=7)
-    fig.tight_layout(pad=0.3, h_pad=0.7, w_pad=0.9)
+    fig.tight_layout(pad=0.3, h_pad=0.7, w_pad=0.9, rect=(0, 0, 1, 0.965))
     _save(fig, out, "ko_cliff")
 
 
