@@ -168,7 +168,7 @@ def fig_cliff(out: Path):
     for ax in axes[1]:
         ax.set_xlabel("위반 이름의 수", fontsize=7.5)
     for ax in axes[:, 0]:
-        ax.set_ylabel("지침 준수율", fontsize=7)
+        ax.set_ylabel("표기 지침 준수율", fontsize=7)
     # 그림 2와 같이 첫 판 안에 둔다. Qwen 판은 회색이 1.0에, 빨강이 위반 5개부터
     # 0.0에 붙어 오른쪽 위가 비어 있다. 범례 순서는 빨강이 위로 오게 뒤집는다.
     h, l = axes[0][0].get_legend_handles_labels()
