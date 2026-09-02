@@ -146,7 +146,7 @@ def fig_cliff(out: Path):
     # fig_attention과 똑같이 두면 격자 기하가 일치한다. 범례는 판 밖 위에 붙이고
     # 잘라내기로 함께 담으므로, 두 그림은 **폭이 같고 그림 1만 범례 줄만큼 높다** —
     # 단폭에 넣었을 때 판 크기가 어긋나지 않는다.
-    fig, axes = plt.subplots(2, 2, figsize=(3.3, 2.65), sharex=True, sharey=True)
+    fig, axes = plt.subplots(2, 2, figsize=(3.3, 2.65))
     for ax, m in zip(axes.ravel(), ORDER):
         for tgt, color, mk, lab in (("camel", RED, "o", "camelCase 지침"),
                                     ("snake", GRAY, "s", "snake_case 지침")):
