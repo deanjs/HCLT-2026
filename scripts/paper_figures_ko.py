@@ -142,11 +142,11 @@ def fig_cliff(out: Path):
         by[(c["model"]["family"], c["instruction"]["target_notation"])][n_viol].append(
             1.0 if r["metrics"]["extra"]["first_compliant"] else 0.0)
 
-    # 상자를 그림 2의 저장 크기(247.1 x 200.4 pt)에 못 박는다. 잘라내기를 끄고(_save의
-    # tight=False) figsize를 그대로 쓰므로 결과 크기가 그림 2와 정확히 같아진다 —
-    # LaTeX가 폭을 단폭에 맞출 때 두 그림의 높이도 같아진다.
-    fig, axes = plt.subplots(2, 2, figsize=(247.1 / 72, 200.4 / 72),
-                             sharex=True, sharey=True)
+    # 판 하나의 크기를 그림 2와 같게 만든다(87.21 x 64.00 pt). figsize·여백을 그림 2의
+    # fig_attention과 똑같이 두면 격자 기하가 일치한다. 범례는 판 밖 위에 붙이고
+    # 잘라내기로 함께 담으므로, 두 그림은 **폭이 같고 그림 1만 범례 줄만큼 높다** —
+    # 단폭에 넣었을 때 판 크기가 어긋나지 않는다.
+    fig, axes = plt.subplots(2, 2, figsize=(3.3, 2.65), sharex=True, sharey=True)
     for ax, m in zip(axes.ravel(), ORDER):
         for tgt, color, mk, lab in (("camel", RED, "o", "camelCase 지침"),
                                     ("snake", GRAY, "s", "snake_case 지침")):
@@ -168,14 +168,13 @@ def fig_cliff(out: Path):
         ax.set_xlabel("위반 이름의 수", fontsize=7.5)
     for ax in axes[:, 0]:
         ax.set_ylabel("지침 준수율", fontsize=7)
-    # 범례는 판 밖 맨 아래. 상자 크기는 위에서 못 박았으므로 범례를 빼도 그림 2와
-    # 어긋나지 않는다 — 격자만 그만큼 눌린다.
-    fig.tight_layout(pad=0.45, h_pad=0.7, w_pad=0.9, rect=(0, 0.085, 1, 1))
+    # 여백은 그림 2와 동일. rect를 건드리지 않아야 판 크기가 그림 2와 같아진다.
+    fig.tight_layout(pad=0.3, h_pad=0.7, w_pad=0.9)
     h, l = axes[0][0].get_legend_handles_labels()
-    fig.legend(h, l, ncol=2, loc="lower center", bbox_to_anchor=(0.5, -0.004),
+    fig.legend(h, l, ncol=2, loc="lower center", bbox_to_anchor=(0.5, 1.0),
                fontsize=6.4, handlelength=1.5, columnspacing=1.6, borderaxespad=0.0,
                frameon=False)
-    _save(fig, out, "ko_cliff", tight=False)
+    _save(fig, out, "ko_cliff")
 
 
 # ── 그림 2. Key와 Value 중 어느 쪽이 표기를 나르나 (step3 + step5) ───────
