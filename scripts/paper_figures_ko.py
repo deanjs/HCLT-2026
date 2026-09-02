@@ -149,7 +149,10 @@ def fig_cliff(out: Path):
               ("stability", AMBER, ":", "s", 1.0),
               ("llama", PURPLE, "-.", "D", 0.0)]
 
-    fig, axes = plt.subplots(1, 2, figsize=(3.3, 1.95), sharey=True)
+    # 높이는 저장 결과가 그림 2~4와 같은 비율(가로:세로 = 1.417)이 되도록 맞춘다.
+    # bbox_inches="tight"가 여백을 잘라내므로 figsize가 곧 결과 비율이 아니다 —
+    # 위에 붙는 범례까지 포함해 실제 저장 크기로 맞춰야 논문에서 판 높이가 어긋나지 않는다.
+    fig, axes = plt.subplots(1, 2, figsize=(3.3, 2.145), sharey=True)
     for ax, (tgt, title) in zip(axes, (("camel", "(가) camelCase 지침"),
                                        ("snake", "(나) snake_case 지침"))):
         for m, color, ls, mk, fill in series:
