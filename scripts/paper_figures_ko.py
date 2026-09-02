@@ -139,12 +139,15 @@ def fig_cliff(out: Path):
         by[(c["model"]["family"], c["instruction"]["target_notation"])][n_viol].append(
             1.0 if r["metrics"]["extra"]["first_compliant"] else 0.0)
 
-    # 코드 특화 세 종은 빨강·파랑·노랑, 범용은 회색. 흑백 인쇄를 대비해 선 모양도 가른다.
-    BLUE, AMBER = "#2C6FAD", "#C98A00"
+    # 이 판만 색이 **모델 정체성**을 뜻한다(다른 그림의 빨강·회색은 지침/코드, Value/Key라는
+    # 개념 대비다 — 그쪽은 건드리지 않는다). 네 색은 색각 이상 분리도·명도대·채도·배경 대비를
+    # 검증기로 통과시킨 조합이다. 다만 흑백으로 뽑으면 빨강·파랑·보라의 밝기가 0.13~0.15로
+    # 붙으므로, **선 모양과 표식이 색과 무관하게 모델을 가른다**(색만으로 구분하지 않는다).
+    BLUE, AMBER, PURPLE = "#2C6FAD", "#B07A00", "#7B5EA7"
     series = [("qwen", RED, "-", "o", 1.0),
               ("deepseek", BLUE, "--", "^", 1.0),
               ("stability", AMBER, ":", "s", 1.0),
-              ("llama", GRAY, "-.", "D", 0.0)]
+              ("llama", PURPLE, "-.", "D", 0.0)]
 
     fig, axes = plt.subplots(1, 2, figsize=(3.3, 1.95), sharey=True)
     for ax, (tgt, title) in zip(axes, (("camel", "(가) camelCase 지침"),
