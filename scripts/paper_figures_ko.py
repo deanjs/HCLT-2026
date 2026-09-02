@@ -126,11 +126,14 @@ def ci95(xs):
 
 # ── 그림 1. 문맥의 위반이 준수율을 무너뜨린다 (step1) ────────────────────
 def fig_cliff(out: Path):
-    """지침이 모델의 기본 선호와 부딪힐 때에만 무너진다 — 방향별로 판을 나눈다.
+    """지침이 모델의 기본 선호와 부딪힐 때에만 무너진다 — 모델당 판 하나.
 
-    네 모델 x 두 방향 = 여덟 선이라 한 판에 겹치면 읽히지 않는다. 방향으로 판을
-    가르면 각 판이 "이 방향에서 문맥이 얼마나 끌어당기는가" 하나만 말한다.
-    색은 코드 특화(빨강)와 범용(회색)을 가르고, 선 모양이 모델을 가른다.
+    판을 모델로 가르면 두 지침 방향이 **한 판 안에서** 갈라지는 것이 보인다. 이 스텝의
+    주장이 곧 그 갈라짐이므로 비교가 판 사이를 건너뛰지 않는다. 세 판은 빨강만 무너지고
+    회색은 평탄한데, Llama 판만 둘 다 무너진다 — 판 하나가 통째로 달라 보인다.
+
+    판당 선이 둘뿐이라 색은 모델이 아니라 **지침 방향**을 뜻한다(그림 2~4와 같은
+    빨강·회색 대비). 그림 2와 판 배치도 같다.
     """
     by = defaultdict(lambda: defaultdict(list))
     for r in load("step1_cliff"):
@@ -139,44 +142,31 @@ def fig_cliff(out: Path):
         by[(c["model"]["family"], c["instruction"]["target_notation"])][n_viol].append(
             1.0 if r["metrics"]["extra"]["first_compliant"] else 0.0)
 
-    # 이 판만 색이 **모델 정체성**을 뜻한다(다른 그림의 빨강·회색은 지침/코드, Value/Key라는
-    # 개념 대비다 — 그쪽은 건드리지 않는다). 네 색은 색각 이상 분리도·명도대·채도·배경 대비를
-    # 검증기로 통과시킨 조합이다. 다만 흑백으로 뽑으면 빨강·파랑·보라의 밝기가 0.13~0.15로
-    # 붙으므로, **선 모양과 표식이 색과 무관하게 모델을 가른다**(색만으로 구분하지 않는다).
-    BLUE, AMBER, PURPLE = "#2C6FAD", "#B07A00", "#7B5EA7"
-    series = [("qwen", RED, "-", "o", 1.0),
-              ("deepseek", BLUE, "--", "^", 1.0),
-              ("stability", AMBER, ":", "s", 1.0),
-              ("llama", PURPLE, "-.", "D", 0.0)]
-
-    # 높이는 저장 결과가 그림 2~4와 같은 비율(가로:세로 = 1.417)이 되도록 맞춘다.
-    # bbox_inches="tight"가 여백을 잘라내므로 figsize가 곧 결과 비율이 아니다 —
-    # 위에 붙는 범례까지 포함해 실제 저장 크기로 맞춰야 논문에서 판 높이가 어긋나지 않는다.
-    fig, axes = plt.subplots(1, 2, figsize=(3.3, 2.145), sharey=True)
-    for ax, (tgt, title) in zip(axes, (("camel", "(가) camelCase 지침"),
-                                       ("snake", "(나) snake_case 지침"))):
-        for m, color, ls, mk, fill in series:
+    fig, axes = plt.subplots(2, 2, figsize=(3.3, 2.65), sharex=True, sharey=True)
+    for ax, m in zip(axes.ravel(), ORDER):
+        for tgt, color, mk, lab in (("camel", RED, "o", "camelCase 지침"),
+                                    ("snake", GRAY, "s", "snake_case 지침")):
             k = (m, tgt)
             if k not in by:
                 continue
             xs = sorted(by[k])
-            ax.plot(xs, [st.mean(by[k][x]) for x in xs], color=color, linestyle=ls,
-                    linewidth=1.1, marker=mk, ms=2.6, markevery=3,
-                    markerfacecolor=color if fill else "white",
-                    markeredgecolor=color, markeredgewidth=0.8, label=SHORT[m])
-        ax.set_title(title, fontsize=7.5, pad=3)
-        ax.set_ylim(-0.04, 1.06)
+            ax.plot(xs, [st.mean(by[k][x]) for x in xs], color=color, linewidth=1.2,
+                    marker=mk, ms=2.6, markevery=3, markerfacecolor=color,
+                    markeredgecolor=color, label=lab)
+        ax.set_title(SHORT[m], fontsize=7.5, pad=2.5)
+        ax.set_ylim(-0.05, 1.07)
         ax.set_yticks([0, 0.5, 1.0])
         ax.set_xticks(range(0, 13, 4))
         ax.set_xlim(-0.4, 12.4)
-        ax.tick_params(labelsize=6.5)
+        ax.tick_params(labelsize=6.2)
         _tidy(ax)
-    axes[0].set_ylabel("지침 준수율", fontsize=7.5)
-    h, l = axes[0].get_legend_handles_labels()
-    fig.legend(h, l, ncol=4, loc="lower center", bbox_to_anchor=(0.5, 0.99),
-               fontsize=6.4, handlelength=1.6, columnspacing=1.0, borderaxespad=0.0)
-    fig.supxlabel("앞선 코드에 놓인 위반 이름의 수", fontsize=7.5, y=0.02)
-    fig.tight_layout(pad=0.25, w_pad=0.8, rect=(0, 0.05, 1, 1))
+    axes[0][0].legend(fontsize=6.2, loc="lower left", handlelength=1.3,
+                      borderaxespad=0.25)
+    for ax in axes[1]:
+        ax.set_xlabel("위반 이름의 수", fontsize=7.5)
+    for ax in axes[:, 0]:
+        ax.set_ylabel("지침 준수율", fontsize=7)
+    fig.tight_layout(pad=0.3, h_pad=0.7, w_pad=0.9)
     _save(fig, out, "ko_cliff")
 
 
