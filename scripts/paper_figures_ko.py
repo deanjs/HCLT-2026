@@ -126,7 +126,12 @@ def ci95(xs):
 
 # ── 그림 1. 문맥의 위반이 준수율을 무너뜨린다 (step1) ────────────────────
 def fig_cliff(out: Path):
-    """지침이 모델의 기본 선호와 부딪힐 때에만 무너진다 — 두 방향을 함께 그려야 보인다."""
+    """지침이 모델의 기본 선호와 부딪힐 때에만 무너진다 — 방향별로 판을 나눈다.
+
+    네 모델 x 두 방향 = 여덟 선이라 한 판에 겹치면 읽히지 않는다. 방향으로 판을
+    가르면 각 판이 "이 방향에서 문맥이 얼마나 끌어당기는가" 하나만 말한다.
+    색은 코드 특화(빨강)와 범용(회색)을 가르고, 선 모양이 모델을 가른다.
+    """
     by = defaultdict(lambda: defaultdict(list))
     for r in load("step1_cliff"):
         c = r["condition"]
@@ -134,32 +139,38 @@ def fig_cliff(out: Path):
         by[(c["model"]["family"], c["instruction"]["target_notation"])][n_viol].append(
             1.0 if r["metrics"]["extra"]["first_compliant"] else 0.0)
 
-    fig, ax = plt.subplots(figsize=(3.3, 2.35))
-    # 색은 지침 방향(기본 선호와 부딪히는가)을, 선 모양은 모델을 가른다.
-    series = [("qwen", "camel", RED, "-", "o", 1.0),
-              ("stability", "camel", RED, "--", "s", 1.0),
-              ("qwen", "snake", GRAY, "-", "o", 0.0),
-              ("stability", "snake", GRAY, "--", "s", 0.0)]
-    for m, tgt, color, ls, mk, fill in series:
-        k = (m, tgt)
-        if k not in by:
-            continue
-        xs = sorted(by[k])
-        ax.plot(xs, [st.mean(by[k][x]) for x in xs], color=color, linestyle=ls,
-                linewidth=1.3, marker=mk, ms=3.2, markevery=2,
-                markerfacecolor=color if fill else "white",
-                markeredgecolor=color, markeredgewidth=1.0,
-                label=f"{SHORT[m]} · {'camelCase' if tgt == 'camel' else 'snake_case'}")
-    ax.set_xlabel("앞선 코드에 놓인 위반 이름의 수")
-    ax.set_ylabel("지침 준수율")
-    ax.set_ylim(-0.04, 1.06)
-    ax.set_yticks([0, 0.25, 0.5, 0.75, 1.0])
-    ax.set_xticks(range(0, 13, 3))
-    ax.set_xlim(-0.4, 12.4)
-    ax.legend(ncol=2, loc="lower center", bbox_to_anchor=(0.5, 1.0),
-              borderaxespad=0.0)
-    _tidy(ax)
-    fig.tight_layout(pad=0.25)
+    # 코드 특화 세 종은 빨강·파랑·노랑, 범용은 회색. 흑백 인쇄를 대비해 선 모양도 가른다.
+    BLUE, AMBER = "#2C6FAD", "#C98A00"
+    series = [("qwen", RED, "-", "o", 1.0),
+              ("deepseek", BLUE, "--", "^", 1.0),
+              ("stability", AMBER, ":", "s", 1.0),
+              ("llama", GRAY, "-.", "D", 0.0)]
+
+    fig, axes = plt.subplots(1, 2, figsize=(3.3, 1.95), sharey=True)
+    for ax, (tgt, title) in zip(axes, (("camel", "(가) camelCase 지침"),
+                                       ("snake", "(나) snake_case 지침"))):
+        for m, color, ls, mk, fill in series:
+            k = (m, tgt)
+            if k not in by:
+                continue
+            xs = sorted(by[k])
+            ax.plot(xs, [st.mean(by[k][x]) for x in xs], color=color, linestyle=ls,
+                    linewidth=1.1, marker=mk, ms=2.6, markevery=3,
+                    markerfacecolor=color if fill else "white",
+                    markeredgecolor=color, markeredgewidth=0.8, label=SHORT[m])
+        ax.set_title(title, fontsize=7.5, pad=3)
+        ax.set_ylim(-0.04, 1.06)
+        ax.set_yticks([0, 0.5, 1.0])
+        ax.set_xticks(range(0, 13, 4))
+        ax.set_xlim(-0.4, 12.4)
+        ax.tick_params(labelsize=6.5)
+        _tidy(ax)
+    axes[0].set_ylabel("지침 준수율", fontsize=7.5)
+    h, l = axes[0].get_legend_handles_labels()
+    fig.legend(h, l, ncol=4, loc="lower center", bbox_to_anchor=(0.5, 0.99),
+               fontsize=6.4, handlelength=1.6, columnspacing=1.0, borderaxespad=0.0)
+    fig.supxlabel("앞선 코드에 놓인 위반 이름의 수", fontsize=7.5, y=0.02)
+    fig.tight_layout(pad=0.25, w_pad=0.8, rect=(0, 0.05, 1, 1))
     _save(fig, out, "ko_cliff")
 
 
