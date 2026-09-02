@@ -142,10 +142,10 @@ def fig_cliff(out: Path):
         by[(c["model"]["family"], c["instruction"]["target_notation"])][n_viol].append(
             1.0 if r["metrics"]["extra"]["first_compliant"] else 0.0)
 
-    # 상자를 그림 2의 저장 크기(247.07 x 200.38 pt)에 못 박는다. 잘라내기를 끄면
-    # (_save의 tight=False) figsize가 곧 결과 크기이므로 두 그림의 높이가 정확히 같다.
-    # 범례 자리는 이 상자 **안에서** 위쪽을 비워 확보한다(rect).
-    fig, axes = plt.subplots(2, 2, figsize=(247.07 / 72, 200.38 / 72))
+    # 그림 2(fig_attention)와 **완전히 같은 구조**로 그린다: 같은 figsize, 같은 여백,
+    # 같은 잘라내기, 범례도 판 안. 하나라도 다르면 상자나 판 크기가 어긋난다.
+    # 범례를 판 밖으로 빼면 그만큼 격자가 눌리므로 판 크기를 맞출 수 없다.
+    fig, axes = plt.subplots(2, 2, figsize=(3.3, 2.65))
     for ax, m in zip(axes.ravel(), ORDER):
         for tgt, color, mk, lab in (("camel", RED, "o", "camelCase 지침"),
                                     ("snake", GRAY, "s", "snake_case 지침")):
@@ -167,12 +167,12 @@ def fig_cliff(out: Path):
         ax.set_xlabel("위반 이름의 수", fontsize=7.5)
     for ax in axes[:, 0]:
         ax.set_ylabel("지침 준수율", fontsize=7)
-    fig.tight_layout(pad=0.45, h_pad=0.7, w_pad=0.9, rect=(0, 0, 1, 0.925))
-    h, l = axes[0][0].get_legend_handles_labels()
-    fig.legend(h, l, ncol=2, loc="upper center", bbox_to_anchor=(0.5, 1.005),
-               fontsize=6.4, handlelength=1.5, columnspacing=1.6, borderaxespad=0.0,
-               frameon=False)
-    _save(fig, out, "ko_cliff", tight=False)
+    # 그림 2는 범례를 첫 판 왼쪽 위에 둔다. 이 그림은 그 자리에 선이 지나므로
+    # 비어 있는 오른쪽 가운데에 놓는다 — 판 안이어야 격자 크기가 그림 2와 같아진다.
+    axes[0][0].legend(fontsize=6.2, loc="center right", handlelength=1.2,
+                      borderaxespad=0.3)
+    fig.tight_layout(pad=0.3, h_pad=0.7, w_pad=0.9)
+    _save(fig, out, "ko_cliff", box_pt=(247.07, 200.38))   # 그림 2와 같은 상자
 
 
 # ── 그림 2. Key와 Value 중 어느 쪽이 표기를 나르나 (step3 + step5) ───────
@@ -499,7 +499,8 @@ def fig_score_vs_real(out: Path):
     _save(fig, out, "ko_score_vs_real")
 
 
-def _save(fig, out: Path, name: str, tight: bool = True) -> None:
+def _save(fig, out: Path, name: str, tight: bool = True,
+          box_pt: tuple[float, float] | None = None) -> None:
     """tight=False면 여백을 잘라내지 않고 figsize를 **그대로** 상자 크기로 쓴다.
 
     bbox_inches="tight"는 내용에 맞춰 여백을 깎으므로, 축 라벨 길이가 다른 두 그림은
@@ -507,7 +508,16 @@ def _save(fig, out: Path, name: str, tight: bool = True) -> None:
     정확히 맞춰야 할 때는 잘라내기를 끄고 figsize로 상자를 못 박는다.
     """
     out.mkdir(parents=True, exist_ok=True)
-    bb = "tight" if tight else None
+    if box_pt is not None:
+        # 잘라내기 위치는 눈금 글자 폭에 좌우되어 그림마다 0.2pt쯤 어긋난다. 나란히 놓을
+        # 그림끼리는 그 차이도 보이므로, 잘라낸 상자를 목표 크기(pt)로 늘려 못 박는다.
+        from matplotlib.transforms import Bbox
+        tb = fig.get_tightbbox(fig.canvas.get_renderer())
+        cx, cy = (tb.x0 + tb.x1) / 2, (tb.y0 + tb.y1) / 2
+        w, h = box_pt[0] / 72 / 2, box_pt[1] / 72 / 2
+        bb = Bbox([[cx - w, cy - h], [cx + w, cy + h]])
+    else:
+        bb = "tight" if tight else None
     fig.savefig(out / f"{name}.pdf", bbox_inches=bb)
     fig.savefig(out / f"{name}.png", bbox_inches=bb)
     plt.close(fig)
