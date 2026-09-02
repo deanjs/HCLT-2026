@@ -147,15 +147,17 @@ def fig_cliff(out: Path):
     # 폭 247.07pt 기준 높이 174.31pt이며, _save의 box_pt로 그 크기에 못 박는다.
     fig, axes = plt.subplots(2, 2, figsize=(3.3, 2.285))
     for ax, m in zip(axes.ravel(), ORDER):
-        # 표식 없이 색만으로 가른다(그림 2와 같다). 선 굵기도 그림 2를 따른다.
-        for tgt, color, lw, lab in (("snake", GRAY, 1.0, "snake_case 지침"),
-                                    ("camel", RED, 1.2, "camelCase 지침")):
+        # 색이 두 지침 방향을 가르고, 표식이 흑백 인쇄에서 그 역할을 대신한다.
+        # 두 칸마다 찍는다 — 절벽이 위반 4와 6 사이라 그 앞뒤 점이 모두 표식을 받는다.
+        for tgt, color, lw, mk, lab in (("snake", GRAY, 1.0, "s", "snake_case 지침"),
+                                        ("camel", RED, 1.2, "o", "camelCase 지침")):
             k = (m, tgt)
             if k not in by:
                 continue
             xs = sorted(by[k])
-            ax.plot(xs, [st.mean(by[k][x]) for x in xs], color=color,
-                    linewidth=lw, label=lab)
+            ax.plot(xs, [st.mean(by[k][x]) for x in xs], color=color, linewidth=lw,
+                    marker=mk, ms=2.4, markevery=2, markerfacecolor=color,
+                    markeredgecolor=color, label=lab)
         ax.set_title(SHORT[m], fontsize=7.5, pad=2.5)
         ax.set_ylim(-0.05, 1.07)
         ax.set_yticks([0, 0.5, 1.0])
