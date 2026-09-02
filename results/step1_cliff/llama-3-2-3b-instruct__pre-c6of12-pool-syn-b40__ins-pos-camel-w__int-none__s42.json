@@ -1,0 +1,83 @@
+{
+  "step": "step1_cliff",
+  "rq": "RQ1",
+  "prediction": null,
+  "created_at": "2026-09-02T10:42:44.234862+00:00",
+  "condition": {
+    "model": {
+      "name": "unsloth/Llama-3.2-3B-Instruct",
+      "family": "llama",
+      "dtype": "float16",
+      "quantization": null
+    },
+    "preceding": {
+      "n_compliant": 6,
+      "n_functions": 12,
+      "composition": "pool",
+      "source": "synthetic",
+      "repo_lang": null,
+      "repo_file": null,
+      "pool_block": 40,
+      "lang": null
+    },
+    "instruction": {
+      "form": "positive",
+      "target_notation": "camel",
+      "strength": "weak",
+      "candidates": [
+        "camel",
+        "snake"
+      ]
+    },
+    "intervention": {
+      "kind": "none",
+      "layers": null,
+      "donor": null,
+      "amplify": null,
+      "kinds": null,
+      "strength": null,
+      "steer_source": null,
+      "steer_layer": null,
+      "span": null,
+      "target": "code"
+    },
+    "seed": 42,
+    "task_ids": [],
+    "tag": null,
+    "token_unit": "all"
+  },
+  "metrics": {
+    "compliance_rate": 0.0,
+    "compliance_preference": null,
+    "attention_weight": null,
+    "v_norm": null,
+    "av_norm": null,
+    "v_cosine": null,
+    "per_layer": {},
+    "extra": {
+      "turn_notations": [
+        "snake"
+      ],
+      "turn_names": [
+        "remove_duplicates"
+      ],
+      "turn_texts": [
+        "def  remove_duplicates(input_list):\n    \"\"\"\n    Removes duplicate items from a list while preserving the original order.\n\n"
+      ],
+      "target": "camel",
+      "forced_prefix": "def ",
+      "first_compliant": false,
+      "first_violated": true,
+      "subsequent_violation_rate": null
+    }
+  },
+  "meta": {
+    "python": "3.13.15",
+    "git_sha": "6b7ebbbb52533d30f0ab58af15415598ec6c1df6",
+    "git_dirty": true,
+    "torch": "2.11.0+cu128",
+    "transformers": "5.16.1",
+    "accelerate": "1.14.0",
+    "gpu": "Tesla T4"
+  }
+}
