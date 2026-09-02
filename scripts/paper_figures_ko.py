@@ -142,9 +142,11 @@ def fig_cliff(out: Path):
         by[(c["model"]["family"], c["instruction"]["target_notation"])][n_viol].append(
             1.0 if r["metrics"]["extra"]["first_compliant"] else 0.0)
 
-    # 그림 2와 **같은 판 구조**여야 논문에서 나란히 놓였을 때 격자가 어긋나지 않는다.
-    # figsize·범례 위치·여백을 그림 2에 맞춘다(fig_attention 참조).
-    fig, axes = plt.subplots(2, 2, figsize=(3.3, 2.65), sharex=True, sharey=True)
+    # 상자를 그림 2의 저장 크기(247.1 x 200.4 pt)에 못 박는다. 잘라내기를 끄고(_save의
+    # tight=False) figsize를 그대로 쓰므로 결과 크기가 그림 2와 정확히 같아진다 —
+    # LaTeX가 폭을 단폭에 맞출 때 두 그림의 높이도 같아진다.
+    fig, axes = plt.subplots(2, 2, figsize=(247.1 / 72, 200.4 / 72),
+                             sharex=True, sharey=True)
     for ax, m in zip(axes.ravel(), ORDER):
         for tgt, color, mk, lab in (("camel", RED, "o", "camelCase 지침"),
                                     ("snake", GRAY, "s", "snake_case 지침")):
@@ -170,8 +172,8 @@ def fig_cliff(out: Path):
         ax.set_xlabel("위반 이름의 수", fontsize=7.5)
     for ax in axes[:, 0]:
         ax.set_ylabel("지침 준수율", fontsize=7)
-    fig.tight_layout(pad=0.3, h_pad=0.7, w_pad=0.9)
-    _save(fig, out, "ko_cliff")
+    fig.tight_layout(pad=0.45, h_pad=0.7, w_pad=0.9)
+    _save(fig, out, "ko_cliff", tight=False)
 
 
 # ── 그림 2. Key와 Value 중 어느 쪽이 표기를 나르나 (step3 + step5) ───────
@@ -498,10 +500,17 @@ def fig_score_vs_real(out: Path):
     _save(fig, out, "ko_score_vs_real")
 
 
-def _save(fig, out: Path, name: str) -> None:
+def _save(fig, out: Path, name: str, tight: bool = True) -> None:
+    """tight=False면 여백을 잘라내지 않고 figsize를 **그대로** 상자 크기로 쓴다.
+
+    bbox_inches="tight"는 내용에 맞춰 여백을 깎으므로, 축 라벨 길이가 다른 두 그림은
+    같은 figsize를 줘도 저장 크기가 달라진다. 논문에서 나란히 놓일 그림끼리 높이를
+    정확히 맞춰야 할 때는 잘라내기를 끄고 figsize로 상자를 못 박는다.
+    """
     out.mkdir(parents=True, exist_ok=True)
-    fig.savefig(out / f"{name}.pdf", bbox_inches="tight")
-    fig.savefig(out / f"{name}.png", bbox_inches="tight")
+    bb = "tight" if tight else None
+    fig.savefig(out / f"{name}.pdf", bbox_inches=bb)
+    fig.savefig(out / f"{name}.png", bbox_inches=bb)
     plt.close(fig)
     print(f"  {out}/{name}.pdf")
 
