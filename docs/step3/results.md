@@ -1,6 +1,7 @@
 # step3 결과 — 코드 신호는 내용에 실린다 (RQ2 인과)
 
 > **스텝:** step3 · **RQ:** RQ2 (인과) · **결과:** `results/step3_code-cause/` 504개
+> **논문:** 그림 3 왼쪽(선행 코드) · 표 · A2
 > **재현:** `python scripts/step3_net_effect.py results/step3_code-cause --figs docs/step3/figures`
 
 ---

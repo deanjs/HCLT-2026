@@ -1,7 +1,8 @@
 # step4 결과 — 모델은 지침을 본다 (RQ3 관측)
 
 > **스텝:** step4 · **RQ:** RQ3 (지침을 얼마나 참조하는가 — 관측)
-> **결과:** `results/step4_instr-observe/` 336개 · **재현:** `python scripts/observe_per_token.py results/step4_instr-observe`
+> **결과:** `results/step4_instr-observe/` 336개 · **논문:** 그림 2 · A2
+> **재현:** `python scripts/observe_per_token.py results/step4_instr-observe`
 
 ---
 

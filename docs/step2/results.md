@@ -1,7 +1,8 @@
 # step2 결과 — 코드 신호의 위치와 층 (RQ2 관측)
 
 > **스텝:** step2 · **RQ:** RQ2 (코드의 표기 신호가 어디에, 어느 층에 있는가 — 관측)
-> **결과:** `results/step2_code-observe/` 168개
+> **결과:** `results/step2_code-observe/` 334개 (시드 42 본실험 168 + 시드 67 자리 통제 166)
+> **논문:** 본문 「지침과 선행 코드의 어텐션」 — **주요 결론은 근거에서 제외했다**(§3-6)
 > **재현:** `python scripts/observe_per_token.py results/step2_code-observe` (표) · `python scripts/step2_figures.py` (그림)
 
 ---

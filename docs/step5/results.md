@@ -1,9 +1,11 @@
 # step5 결과 — 지침 신호도 내용에 실린다 (RQ3 인과)
 
 > **스텝:** step5 · **RQ:** RQ3 (인과)
-> **결과:** `results/step5_instr-cause/` 336개 · `results/step5_control_sweep_<모델>/` 672개
-> **재현:** `python scripts/step5_reaggregate.py results/step5_instr-cause --figs docs/step5/figures`
-> **지침 몫 짝지음 신뢰구간:** `python scripts/step5_net_effect.py`
+> **결과:** `results/step5_instr-cause/` 336개(처치) · `results/step5_instr-cause-control/` 2,016개(통제) ·
+> `results/step5_control_sweep_<모델>/` 672개(통제 전 층)
+> **논문:** 그림 2 세로 파선 · 그림 3 오른쪽 · 표
+> **재현(논문 표):** `python scripts/step5_net_effect.py results/step5_instr-cause` — 처치−통제
+> **통제 빼기 전 원값:** `python scripts/step5_reaggregate.py results/step5_instr-cause --figs docs/step5/figures`
 > **층별 곡선:** `python scripts/step5_figures.py`
 
 ---
