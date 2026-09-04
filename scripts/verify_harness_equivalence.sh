@@ -19,6 +19,15 @@
 #
 # 쓰는 법:  bash scripts/verify_harness_equivalence.sh
 set -euo pipefail
+
+# 파이썬 실행기 — 맥에는 `python`이 없고 `python3`만 있는 경우가 많다.
+PY="${PYTHON:-}"
+if [ -z "$PY" ]; then
+  if command -v python3 >/dev/null 2>&1; then PY=python3
+  elif command -v python >/dev/null 2>&1; then PY=python
+  else echo "python3 를 찾을 수 없습니다"; exit 1; fi
+fi
+
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
 
@@ -38,9 +47,9 @@ for step in "${STEPS[@]}"; do
   if [ ! -d "$old_src" ]; then
     echo "  $step: 스냅샷 없음 ($old_src)"; fail=1; continue
   fi
-  python scripts/_dump_experiment_inputs.py "$old_src" "$step" "$WORK/${step}_OLD.json" >/dev/null
-  python scripts/_dump_experiment_inputs.py "src"      "$step" "$WORK/${step}_NEW.json" >/dev/null
-  n=$(python - "$WORK/${step}_OLD.json" "$WORK/${step}_NEW.json" <<'PY'
+  "$PY" scripts/_dump_experiment_inputs.py "$old_src" "$step" "$WORK/${step}_OLD.json" >/dev/null
+  "$PY" scripts/_dump_experiment_inputs.py "src"      "$step" "$WORK/${step}_NEW.json" >/dev/null
+  n=$("$PY" - "$WORK/${step}_OLD.json" "$WORK/${step}_NEW.json" <<'PY'
 import json, sys
 a, b = (json.load(open(p)) for p in sys.argv[1:3])
 print(sum(1 for k in set(a) | set(b) if a.get(k) != b.get(k)))
