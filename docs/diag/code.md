@@ -1,6 +1,6 @@
 # 진단 A 코드 — 평균 덮어쓰기가 Key를 망가뜨리는가
 
-> **읽기 전:** [`../코드_하네스공통.md`](../코드_하네스공통.md) · [`../step3/code.md`](../step3/code.md)(진단 대상 장치)
+> **읽기 전:** [`../하네스_구조.md`](../하네스_구조.md) · [`../step3/code.md`](../step3/code.md)(진단 대상 장치)
 > **방법·결과:** [`방법론.md`](방법론.md) · [`results.md`](results.md)
 > **결과:** `results/diag_kv-phase/` 72개 · **노트북:** `notebooks/diag_kv-phase.ipynb`
 

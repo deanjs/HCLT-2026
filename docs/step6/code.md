@@ -4,7 +4,7 @@
 > (잔차 스트림) 전체에 벡터를 더한다.** step3의 V-캐시 치환과 다른 개입이며, 이후 층의
 > Q·K·V·FFN을 **모두** 바꾼다. 논문에서는 **잔차 스트림 조향(activation steering)** 으로 쓴다.
 
-> **읽기 전:** [`../코드_하네스공통.md`](../코드_하네스공통.md)
+> **읽기 전:** [`../하네스_구조.md`](../하네스_구조.md)
 > **방법·해석:** [`방법론.md`](방법론.md) · [`results.md`](results.md)
 > **결과:** `results/step6_steer/` 2184 · `step6_steer-generate/` 420 · `step6_steer-crosslayer/` 336
 > **노트북:** `notebooks/step6_steer.ipynb` · `step6_verify.ipynb`

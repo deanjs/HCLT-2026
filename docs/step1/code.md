@@ -1,6 +1,6 @@
 # step1 코드 — 준수율 절벽 (RQ1)
 
-> **읽기 전:** [`../코드_하네스공통.md`](../코드_하네스공통.md) (모듈 지도·HuggingFace 기초)
+> **읽기 전:** [`../하네스_구조.md`](../하네스_구조.md) (모듈 지도·HuggingFace 기초)
 > **방법·해석:** [`방법론.md`](방법론.md) · [`results.md`](results.md)
 > **결과:** `results/step1_cliff/` 2184개 · **노트북:** `notebooks/step1_cliff.ipynb`
 

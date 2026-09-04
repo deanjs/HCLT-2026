@@ -1,6 +1,6 @@
 # step2 코드 — 코드 신호 관측 (RQ2 관측)
 
-> **읽기 전:** [`../코드_하네스공통.md`](../코드_하네스공통.md) (모듈 지도·HuggingFace 기초)
+> **읽기 전:** [`../하네스_구조.md`](../하네스_구조.md) (모듈 지도·HuggingFace 기초)
 > **방법·해석:** [`방법론.md`](방법론.md) · [`results.md`](results.md)
 > **결과:** `results/step2_code-observe/` **334개** — 시드 42 168개 + **자리 통제 시드 67 166개**
 > **노트북:** `notebooks/step2_code-observe.ipynb`(시드 42) · `notebooks/step2_position-control.ipynb`(시드 67)

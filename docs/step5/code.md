@@ -1,6 +1,6 @@
 # step5 코드 — 지침 인과 (RQ3 인과)
 
-> **읽기 전:** [`../코드_하네스공통.md`](../코드_하네스공통.md) · [`../step3/code.md`](../step3/code.md)(같은 치환 장치)
+> **읽기 전:** [`../하네스_구조.md`](../하네스_구조.md) · [`../step3/code.md`](../step3/code.md)(같은 치환 장치)
 > **방법·해석:** [`방법론.md`](방법론.md) · [`results.md`](results.md)
 > **결과:** `results/step5_instr-cause/` 336개 + `step5_instr-cause-control/` 2016개
 > **노트북:** `notebooks/step5_instr-cause.ipynb` · `step5_instr-cause-control.ipynb`

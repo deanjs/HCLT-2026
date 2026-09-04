@@ -1,6 +1,6 @@
 # step3 코드 — 코드 신호 인과 (RQ2 인과)
 
-> **읽기 전:** [`../코드_하네스공통.md`](../코드_하네스공통.md) (모듈 지도·HuggingFace 기초)
+> **읽기 전:** [`../하네스_구조.md`](../하네스_구조.md) (모듈 지도·HuggingFace 기초)
 > **방법·해석:** [`방법론.md`](방법론.md) · [`results.md`](results.md) · **장치 검증:** [`../diag/results.md`](../diag/results.md)
 > **결과:** `results/step3_code-cause/` 504개 · **노트북:** `notebooks/step3_code-cause.ipynb`
 

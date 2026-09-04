@@ -1,6 +1,6 @@
 # step4 코드 — 지침 관측 (RQ3 관측)
 
-> **읽기 전:** [`../코드_하네스공통.md`](../코드_하네스공통.md) · [`../step2/code.md`](../step2/code.md)(같은 관측 경로)
+> **읽기 전:** [`../하네스_구조.md`](../하네스_구조.md) · [`../step2/code.md`](../step2/code.md)(같은 관측 경로)
 > **방법·해석:** [`방법론.md`](방법론.md) · [`results.md`](results.md)
 > **결과:** `results/step4_instr-observe/` 336개 · **노트북:** `notebooks/step4_instr-observe.ipynb`
 
@@ -150,7 +150,7 @@ for target in (Notation.CAMEL, Notation.SNAKE):
 `form=POSITIVE` 고정 — **통제 상수**다. RQ3은 "지침의 영향력이 어느 통로(내용/어텐션)로
 흐르는가"를 묻는다(계획서 §0). 지침의 **표현 방식**은 이 질문의 축이 아니므로 하나로 묶어 둔다.
 
-> `InstructionForm.NEGATIVE`가 스키마에 남아 있는 것은 `archive_v1/` 시절 설계의 잔재다.
+> `InstructionForm.NEGATIVE`가 스키마에 남아 있는 것은 통일 재실험 이전(v1) 설계의 잔재다. v1 실험은 저장소에서 제거했다.
 > 통일 재실험 계획서에는 부정형이 없다 — 조건 축으로 쓰지 않는다.
 
 ---

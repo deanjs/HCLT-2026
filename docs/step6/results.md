@@ -11,7 +11,7 @@
 > 이 스텝의 결과는 **폴더가 셋**이다.
 > `results/step6_steer/`(점수 회복, 2184개) · `step6_steer-generate/`(실제 생성 검증, **756개** — 무개입 84 · 값 조향 336 · Spotlight 336) ·
 > `step6_steer-crosslayer/`(층 교차 주입, 336개).
-> 공통 뼈대(`step`·`rq`·`condition`·`meta`)는 [`../코드_하네스공통.md`](../코드_하네스공통.md) §5~6,
+> 공통 뼈대(`step`·`rq`·`condition`·`meta`)는 [`../하네스_구조.md`](../하네스_구조.md) §5~6,
 > 이 값을 만드는 코드는 [`code.md`](code.md) §7.
 
 ### 1-1. 먼저 — 각 필드가 무엇을 말하는가
