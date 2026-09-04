@@ -30,11 +30,11 @@ Value를 직접 조향하면 준수가 회복된다(step6).
 
 | 스텝 | 무엇을 했나 | 문서 | 결과 원본 |
 |---|---|---|---|
-| **step1** | 앞선 코드에 위반 이름을 늘려 가며 준수율을 잰다 | [`docs/step1`](docs/step1) | `results/step1_cliff/` 2,184개 |
+| **step1** | 앞선 코드에 위반 이름을 늘려 가며 준수율을 잰다 | [`docs/step1`](docs/step1) | `results/step1_cliff/` 4,368개 |
 | **step2** | 코드 신호를 어텐션·Value로 나눠 관측한다 | [`docs/step2`](docs/step2) | `results/step2_code-observe/` 334개 |
 | **step3** | 층별로 Key/Value를 바꿔치기해 인과를 확인한다 | [`docs/step3`](docs/step3) | `results/step3_code-cause/` 504개 |
 | **step4** | 모델이 지침 지시어를 실제로 보는지 관측한다 | [`docs/step4`](docs/step4) | `results/step4_instr-observe/` 336개 |
-| **step5** | 지침 신호를 덮어써 인과를 확인한다 | [`docs/step5`](docs/step5) | `results/step5_instr-cause/` 336개 · `step5_control_sweep_*/` 672개 |
+| **step5** | 지침 신호를 덮어써 인과를 확인한다 | [`docs/step5`](docs/step5) | `results/step5_instr-cause/` 336개 · `-control/` 2,016개 · `control_sweep_*/` 672개 |
 | **step6** | 값 조향과 Spotlight를 같은 자 위에서 겨룬다 | [`docs/step6`](docs/step6) | `results/step6_steer/` 2,184개 · `-generate/` 756개 · `-crosslayer/` 336개 |
 | **진단 A** | 측정 장치 자체를 검사한다 (실험 아님) | [`docs/diag`](docs/diag) | `results/diag_kv-phase/` 72개 |
 
@@ -54,7 +54,7 @@ Value를 직접 조향하면 준수가 회복된다(step6).
 | 데이터 | 함수 이름 504개 (동사 50 × 명사 50), 12개씩 42묶음 |
 | 무작위 고정값 | 42 |
 | 내부 값 치환 | 평균 덮어쓰기(mean-pool) — 토크나이저 무관, 코드·지침 동일 |
-| 언어 | 기제 실험은 파이썬. step1만 파이썬 + 자바스크립트 |
+| 언어 | **전 스텝 파이썬.** 하네스는 자바스크립트도 지원하나 JS 결과는 0개다 |
 
 `transformers` 버전을 **고정한다.** KV 캐시 레이아웃이 버전마다 갈리는데 이 실험은 그
 자료구조를 직접 편집하므로, 버전이 바뀌면 개입 대상 자체가 달라진다. 실제로 쓴 버전은
@@ -70,18 +70,13 @@ src/harness/     실험 엔진 — 모든 스텝이 조건값만 바꿔 이 단�
   attention_probe.py  어텐션 · Value 관측
 notebooks/       Colab 실행 노트북 — 스텝당 하나, 모델 하나씩, 끊기면 이어서
 scripts/         집계·작도 (결과 JSON → 표·그림). 결과를 고쳐 쓰지 않는다
-results/         결과 원본 JSON 9,730개 — 불변
+results/         결과 원본 JSON 11,914개 — 불변
 docs/            스텝별 방법론·코드·결과 문서와 그림
-data/repo_files/ step1의 실제 저장소 코드 (출처·라이선스는 SOURCE.md)
 tests/           엔진 테스트
-archive_v1/      통일 재실험 이전(v1)의 실험 전부 — 읽기 전용 보존
 ```
 
 **`results/`는 불변이다.** 한 번 저장한 결과 JSON은 덮어쓰지 않는다. 값이 바뀌어야 하면
 다시 실행해 새 폴더에 쓴다. 집계와 작도는 `scripts/`의 스크립트로만 한다.
-
-**`archive_v1/`은 참고용이다.** 조건을 통일하기 전에 돌린 실험이라 지금 결과와 직접
-비교할 수 없다. 논문에 쓰인 값은 전부 `results/`에서 나온다.
 
 ## 재현
 
