@@ -35,7 +35,7 @@ Value를 직접 조향하면 준수가 회복된다(step6).
 | **step3** | 층별로 Key/Value를 바꿔치기해 인과를 확인한다 | [`docs/step3`](docs/step3) | `results/step3_code-cause/` 504개 |
 | **step4** | 모델이 지침 지시어를 실제로 보는지 관측한다 | [`docs/step4`](docs/step4) | `results/step4_instr-observe/` 336개 |
 | **step5** | 지침 신호를 덮어써 인과를 확인한다 | [`docs/step5`](docs/step5) | `results/step5_instr-cause/` 336개 · `-control/` 2,016개 · `control_sweep_*/` 672개 |
-| **step6** | 값 조향과 Spotlight를 같은 자 위에서 겨룬다 | [`docs/step6`](docs/step6) | `results/step6_steer/` 2,184개 · `-generate/` 756개 · `-crosslayer/` 336개 |
+| **step6** | 값 조향과 Spotlight를 같은 자 위에서 겨룬다 | [`docs/step6`](docs/step6) | `results/step6_steer/` 2,184개 · `-generate/` 1,512개 · `-crosslayer/` 336개 |
 | **진단 A** | 측정 장치 자체를 검사한다 (실험 아님) | [`docs/diag`](docs/diag) | `results/diag_kv-phase/` 72개 |
 
 ### 읽기 전에 알아 둘 것
@@ -73,7 +73,7 @@ src/harness/     실험 엔진 — 모든 스텝이 조건값만 바꿔 이 단�
 notebooks/       Colab 실행 노트북 — 스텝당 하나, 모델 하나씩, 끊기면 이어서
 scripts/         집계·작도 (결과 JSON → 표·그림). 결과를 고쳐 쓰지 않는다
   harness_snapshots/  각 실험 당시의 src/ 박제 — 등가성 검증용, 읽기 전용
-results/         결과 원본 JSON 11,914개 — 불변
+results/         결과 원본 JSON 12,670개 — 불변
 docs/            문서 — docs/README.md 부터
 tests/           엔진 테스트
 ```
@@ -86,7 +86,7 @@ tests/           엔진 테스트
 무엇이 무엇을 만드는지는 [`docs/실행_대응표.md`](docs/실행_대응표.md)에 한 장으로 있다. 요점만 적으면:
 
 논문의 표와 그림을 다시 만드는 데에는 **GPU도 모델도 필요 없다.** `results/`의 JSON
-11,914개가 저장소에 들어 있다.
+12,670개가 저장소에 들어 있다.
 
 ```bash
 pip install numpy matplotlib

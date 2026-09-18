@@ -18,7 +18,7 @@ figures/       그림 (explain_* = 이해용 · 나머지 = 논문용, pdf+png)
 | | |
 |---|---|
 | **묻는 것** | 최대 효과 층의 잔차를 밀면 준수가 되살아나는가 · 어텐션을 키우면 안 되는가 |
-| **결과 원본** | `results/step6_steer/` 2,184 · `-generate/` **756** · `-crosslayer/` 336 — 불변(CLAUDE.md §6) |
+| **결과 원본** | `results/step6_steer/` 2,184 · `-generate/` **1,512** · `-crosslayer/` 336 — 불변(CLAUDE.md §6) |
 | **논문** | 그림 4 · 표 · A3 |
 
 ## 실행 순서 — 본실험 하나 + 보강 둘
@@ -27,7 +27,10 @@ figures/       그림 (explain_* = 이해용 · 나머지 = 논문용, pdf+png)
 |---|---|---|---|
 | ① | `step6_steer.ipynb` | `step6_steer/` 2,184 | 본실험 — 무개입·잔차 조향(최대 효과 층/이른 층)·어텐션 증폭을 선호도로 비교 |
 | ② | `step6_verify.ipynb` | `step6_steer-generate/`<br>`step6_steer-crosslayer/` 336 | 실제 이름 생성 + 층 특이성 교차 검증 |
-| ③ | `step6_spotlight-generate.ipynb` | `step6_steer-generate/` (합쳐 756) | 어텐션 증폭도 실제 생성시켜 같은 자로 비교 |
+| ③ | `step6_spotlight-generate.ipynb` | `step6_steer-generate/` (합쳐 1,512) | 어텐션 증폭도 실제 생성시켜 같은 자로 비교 |
+
+②·③ 모두 처음에는 묶음을 21개로 줄여 돌렸고(생성이라 느리다), 뒤에 나머지 21묶음을 채워
+**42묶음으로 다시 쟀다.** 논문에 실린 준수율은 42묶음 값이다. 층 대조(`-crosslayer/`)만 21묶음이다.
 
 ②와 ③이 **같은 결과 폴더에 쓴다.** 잔차 조향만 실제 생성시키고 어텐션 증폭은 선호도로만 재면
 비교가 성립하지 않기 때문이다.
