@@ -136,7 +136,7 @@ def fig_cliff(out: Path):
     빨강·회색 대비). 그림 2와 판 배치도 같다.
     """
     by = defaultdict(lambda: defaultdict(list))
-    for r in load("step1_cliff"):
+    for r in load("step1"):
         c = r["condition"]
         n_viol = c["preceding"]["n_functions"] - c["preceding"]["n_compliant"]
         by[(c["model"]["family"], c["instruction"]["target_notation"])][n_viol].append(
@@ -183,7 +183,7 @@ def fig_cliff(out: Path):
 def _step3_net():
     """선행 코드 쪽 순효과 = (camel을 덮었을 때) − (snake를 덮었을 때). 봉우리 층에서."""
     cube = defaultdict(lambda: defaultdict(lambda: defaultdict(lambda: defaultdict(dict))))
-    for r in load("step3_code-cause"):
+    for r in load("step3"):
         m = r["condition"]["model"]["family"]
         b = r["condition"]["preceding"]["pool_block"]
         d = r["metrics"]["extra"]["donor"]
@@ -208,7 +208,7 @@ def _step3_net():
 def _step5_net():
     """지침 쪽 순효과 = (반대 표기를 덮었을 때) − (같은 지시어를 덮었을 때). 봉우리 층에서."""
     treat = defaultdict(lambda: defaultdict(list))
-    for r in load("step5_instr-cause"):
+    for r in load("step5/cause"):
         m = r["condition"]["model"]["family"]
         if r["metrics"]["extra"].get("undecidable"):
             continue
@@ -217,7 +217,7 @@ def _step5_net():
             if v.get(f"{k}__recovery") is not None:
                 treat[m][k].append(v[f"{k}__recovery"])
     ctrl = defaultdict(lambda: defaultdict(list))
-    for r in load("step5_instr-cause-control"):
+    for r in load("step5/control"):
         ex = r["metrics"]["extra"]
         if ex.get("mode") != "intervene_sweep" or ex.get("undecidable") \
                 or ex.get("donor") != "control_self":
@@ -237,7 +237,7 @@ def _step5_net():
 def _step3_curves():
     """선행 코드 쪽 층별 순효과 = (camel을 덮었을 때) − (snake를 덮었을 때)."""
     cube = defaultdict(lambda: defaultdict(lambda: defaultdict(lambda: defaultdict(dict))))
-    for r in load("step3_code-cause"):
+    for r in load("step3"):
         m = r["condition"]["model"]["family"]
         b = r["condition"]["preceding"]["pool_block"]
         d = r["metrics"]["extra"]["donor"]
@@ -278,8 +278,8 @@ def _step5_curves():
                         acc[m][(int(L), k)].append(x)
         return acc
 
-    treat = gather(["step5_instr-cause"])
-    ctrl = gather([f"step5_control_sweep_{m}" for m in MODELS], "control_self")
+    treat = gather(["step5/cause"])
+    ctrl = gather(["step5/control-sweep"], "control_self")
     out = {}
     for m in MODELS:
         layers = sorted({L for L, _ in treat[m]} & {L for L, _ in ctrl[m]})
@@ -311,7 +311,7 @@ def _peak(cur):
 def _attention_curves():
     """지침 지시어와 앞선 코드 이름이 층마다 받는 토큰당 어텐션."""
     obs = defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
-    for r in load("step4_instr-observe"):
+    for r in load("step4"):
         m = r["condition"]["model"]["family"]
         cnt = r["metrics"]["extra"].get("span_token_counts", {})
         for L, v in r["metrics"]["per_layer"].items():
@@ -408,7 +408,7 @@ def fig_method(out: Path):
     무개입은 네 모델 모두 0.000이라 막대를 세우지 않고 캡션에서 밝힌다.
     """
     g = defaultdict(lambda: defaultdict(list))
-    for r in load("step6_steer-generate"):
+    for r in load("step6/generate"):
         ex = r["metrics"]["extra"]
         m = r["condition"]["model"]["family"]
         if ex["method"] == "value_add":
@@ -450,7 +450,7 @@ def fig_score_vs_real(out: Path):
 
     왼쪽은 세기 1~2에서 봉우리를 만들고 8에서 무너지는데, 오른쪽은 그동안 계속 오른다.
     """
-    ste = load("step6_steer")
+    ste = load("step6/steer")
     peak = {}
     for r in ste:
         ex = r["metrics"]["extra"]
@@ -466,7 +466,7 @@ def fig_score_vs_real(out: Path):
     for m in MODELS:
         rc[m][0.0] = [0.0]                    # 개입하지 않으면 되돌릴 것도 없다
     gn = defaultdict(lambda: defaultdict(list))
-    for r in load("step6_steer-generate"):
+    for r in load("step6/generate"):
         ex = r["metrics"]["extra"]
         if ex["method"] == "value_add":
             gn[r["condition"]["model"]["family"]][float(ex["strength"])].append(_real(ex))

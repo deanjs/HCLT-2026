@@ -57,23 +57,23 @@ CONTROLS = ("control_self", "control_unrelated_word")
 CTRL_LABEL = {"control_self": "자기 통제(self)", "control_unrelated_word": "음성 통제(무관어)"}
 DEFAULT_GAP_MIN = 1.0
 
-TREAT_DIR = "results/step5_instr-cause"
+TREAT_DIR = "results/step5/cause"
 # 통제는 폴더가 둘이다. 새 폴더(전 층 스윕)가 있으면 그쪽을 쓴다 — 어느 쪽을 썼는지 반드시 찍는다.
-CTRL_DIR_1LAYER = "results/step5_instr-cause-control"        # 봉우리 층 한 곳 (구)
-CTRL_DIR_SWEEP = "results/step5_instr-cause-control-sweep"   # 전 층 (신)
+CTRL_DIR_1LAYER = "results/step5/control"        # 봉우리 층 한 곳 (구)
+CTRL_DIR_SWEEP = "results/step5/control-sweep"   # 전 층 (신)
 
 
 def default_ctrl_dirs() -> list[Path]:
     """통제 폴더를 고른다. 전 층 스윕이 있으면 그쪽, 없으면 기존 단일 층.
 
     전 층 스윕은 한 폴더(`…-control-sweep/`)일 수도 있고, 모델별로 갈려
-    저장됐을 수도 있다(`step5_control_sweep_<모델>/`). 둘 다 받는다.
+    저장됐을 수도 있다(`step5/control-sweep<모델>/`). 둘 다 받는다.
     **단일 층 폴더와는 절대 섞지 않는다** — 짝짓기 키에 층이 없어 조용히 덮인다.
     """
     one = Path(CTRL_DIR_SWEEP)
     if one.is_dir() and any(one.glob("*.json")):
         return [one]
-    split = sorted(d for d in Path("results").glob("step5_control_sweep_*")
+    split = sorted(d for d in Path("results").glob("step5/control-sweep*")
                    if d.is_dir() and any(d.glob("*.json")))
     return split or [Path(CTRL_DIR_1LAYER)]
 

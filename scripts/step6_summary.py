@@ -1,9 +1,9 @@
 """step6 집계 — 처방 비교표 · 이름 건전성 · 층 특이성.
 
 세 실행분을 함께 읽는다.
-  results/step6_steer/              본실험(선호 점수 회복)
-  results/step6_steer-generate/     조향 하에서 실제 생성한 이름
-  results/step6_steer-crosslayer/   맞는 층 방향을 엉뚱한 층에 주입
+  results/step6/steer/              본실험(선호 점수 회복)
+  results/step6/generate/     조향 하에서 실제 생성한 이름
+  results/step6/crosslayer/   맞는 층 방향을 엉뚱한 층에 주입
 
 쓰는 법:
     python scripts/step6_summary.py [--figs docs/step6/figures]
@@ -107,9 +107,9 @@ def peak_layers(rows):
 
 
 def main() -> None:
-    steer = load("step6_steer")
-    gen = load("step6_steer-generate")
-    cross = load("step6_steer-crosslayer")
+    steer = load("step6/steer")
+    gen = load("step6/generate")
+    cross = load("step6/crosslayer")
     fig_dir = None
     if "--figs" in sys.argv:
         fig_dir = Path(sys.argv[sys.argv.index("--figs") + 1])
@@ -196,7 +196,7 @@ def main() -> None:
     if gen:
         print("\n" + "=" * 96)
         print("③-b 점수 회복률과 실제 준수율의 관계 — 같은 조건끼리 짝지어 본다")
-        print("    회복률은 step6_steer, 준수율은 step6_steer-generate. 조건이 겹치는 것만 쓴다.")
+        print("    회복률은 step6/steer, 준수율은 step6/generate. 조건이 겹치는 것만 쓴다.")
         print("=" * 96)
         sc_by = defaultdict(list)
         for r in steer:
